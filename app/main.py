@@ -1,50 +1,89 @@
 import os, time, uuid
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel, EmailStr
+from boto3.dynamodb.conditions import Attr
 import boto3
-from dotenv import dotenv_values
-from dotenv import load_dotenv, find_dotenv
+from dotenv import load_dotenv, find_dotenv   
+from .auth import hash_pw, verify_pw, create_token, decode_token
 
-# ────────────────────────────────────────────────────────────
-# Load variables from .env and show quick debug output
-# ────────────────────────────────────────────────────────────
-print("DEBUG cwd =", Path.cwd())  # current working directory
+# ── Load .env (bucket, region, JWT secret) ──────────────────────
+load_dotenv(find_dotenv())
+REGION     = os.getenv("REGION", "us-east-1")
+S3_BUCKET  = os.getenv("S3_BUCKET")
 
-env_path = find_dotenv()  # search upward for a file named ".env"
-print("DEBUG env_path =", env_path, "exists?", Path(env_path).exists())
-
-load_dotenv(env_path, override=True)  # load .env contents
-print("DEBUG S3_BUCKET =", os.getenv("S3_BUCKET"))
-
-cfg = dotenv_values(env_path)          # ← parse the file directly
-print("DEBUG dotenv_values =", cfg)
-# ────────────────────────────────────────────────────────────
-
-REGION    = os.getenv("REGION", "us-east-1")
-S3_BUCKET = os.getenv("S3_BUCKET")    # should be "photo-share-650794551"
-
-# AWS clients
+# ── AWS clients / tables ────────────────────────────────────────
 s3   = boto3.client("s3", region_name=REGION)
 dyna = boto3.resource("dynamodb", region_name=REGION)
-table = dyna.Table("PhotoMeta")       # DynamoDB table you created
 
-# FastAPI setup
-app = FastAPI(title="Cloud Photo-Share API", version="0.2.0")
+table_photos = dyna.Table("PhotoMeta")   # photo metadata
+table_users  = dyna.Table("Users")       # user accounts
 
+# ── FastAPI & security setup ────────────────────────────────────
+app      = FastAPI(title="Cloud Photo-Share API", version="0.3.0")
+security = HTTPBearer()
+
+def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    try:
+        return decode_token(creds.credentials)
+    except Exception:
+        raise HTTPException(401, "invalid or expired token")
+
+
+# ─────────────────────────  ROUTES  ────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
 
+
+# ----------  Auth endpoints  ----------
+class RegisterIn(BaseModel):
+    email: EmailStr
+    password: str
+
+@app.post("/register")
+def register(body: RegisterIn):
+    # prevent duplicate email
+    if table_users.scan(FilterExpression=Attr("email").eq(body.email))["Items"]:
+        raise HTTPException(400, "email already registered")
+    user_id = str(uuid.uuid4())
+    table_users.put_item(Item={
+        "user_id":       user_id,
+        "email":         body.email,
+        "password_hash": hash_pw(body.password)
+    })
+    return {"user_id": user_id}
+
+class LoginIn(BaseModel):
+    email: EmailStr
+    password: str
+
+@app.post("/login")
+def login(body: LoginIn):
+    resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
+    if not resp["Items"]:
+        raise HTTPException(401, "user not found")
+    user = resp["Items"][0]
+    if not verify_pw(body.password, user["password_hash"]):
+        raise HTTPException(401, "bad credentials")
+    token = create_token(user["user_id"])
+    return {"access_token": token}
+
+
+# ----------  Photo upload & feed  ----------
 @app.post("/upload")
-async def upload_photo(file: UploadFile = File(...)):
-    # accept only images
+async def upload_photo(
+        file: UploadFile = File(...),
+        user_id: str = Depends(current_user)):
+
     if not file.content_type.startswith("image/"):
-        raise HTTPException(400, "File must be an image")
+        raise HTTPException(400, "file must be an image")
 
     photo_id = str(uuid.uuid4())
     key      = f"photos/{photo_id}-{file.filename}"
 
-    # upload bytes to S3
+    # upload to S3
     body = await file.read()
     s3.put_object(
         Bucket=S3_BUCKET,
@@ -53,16 +92,16 @@ async def upload_photo(file: UploadFile = File(...)):
         ContentType=file.content_type
     )
 
-    # store metadata in DynamoDB
-    table.put_item(Item={
+    # write metadata
+    table_photos.put_item(Item={
         "photo_id":    photo_id,
         "s3_key":      key,
-        "uploader":    "demo-user",       # to be replaced in Week 2
+        "uploader":    user_id,
         "caption":     "",
         "uploaded_at": int(time.time())
     })
 
-    # generate presigned URL (1 h)
+    # presigned URL (1 h)
     url = s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": S3_BUCKET, "Key": key},
@@ -71,13 +110,12 @@ async def upload_photo(file: UploadFile = File(...)):
 
     return {"photo_id": photo_id, "url": url}
 
+
 @app.get("/feed")
 def get_feed(limit: int = 20):
-    # simple scan (fine for a demo)
-    resp  = table.scan()
+    resp  = table_photos.scan()
     items = sorted(resp["Items"], key=lambda x: x["uploaded_at"], reverse=True)[:limit]
 
-    # attach presigned URLs
     for it in items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
