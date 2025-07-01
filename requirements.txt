@@ -1,19 +1,10 @@
-sqlmodel>=0.0.16
 alembic>=1.13
-pillow>=10
-# core web
-fastapi>=0.111
-uvicorn[standard]>=0.29
-
-# aws + env
 boto3>=1.34
+email-validator>=2.1
+fastapi>=0.111
+passlib[bcrypt]>=1.7
 python-dotenv>=1.0
-
-# crypto / security (already there if you used them)
-passlib[bcrypt]
-PyJWT
-
-# database / misc
-sqlmodel>=0.0.16
-alembic>=1.13
+PyJWT>=2.8
 pillow>=10
+sqlmodel>=0.0.16
+uvicorn[standard]>=0.29
