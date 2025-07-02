@@ -6,24 +6,19 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr
 
-import boto3
 from boto3.dynamodb.conditions import Attr
 from dotenv import load_dotenv, find_dotenv
 
 from .auth import hash_pw, verify_pw, create_token, decode_token
-from .routers import albums, photos    # routers live in app/routers/
+from .routers import albums                      # router modules
+import app.routers.photos as photos              # explicit import avoids circulars
+from .aws_config import REGION, S3_BUCKET, s3, dyna  # shared AWS clients / constants
 
-# ── config ────────────────────────────────────────────────────
-load_dotenv(find_dotenv())
-REGION    = os.getenv("REGION", "us-east-1")
-S3_BUCKET = os.getenv("S3_BUCKET")
-
-s3   = boto3.client("s3", region_name=REGION)
-dyna = boto3.resource("dynamodb", region_name=REGION)
+# DynamoDB tables
 table_users  = dyna.Table("Users")
 table_photos = dyna.Table("PhotoMeta")
 
-# ── app init & router mount ──────────────────────────────────
+# ── FastAPI app & routers ─────────────────────────────────────
 app = FastAPI(title="Cloud Photo-Share API", version="0.5.0")
 app.include_router(albums.router)
 app.include_router(photos.router)
@@ -36,12 +31,12 @@ def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str
     except Exception:
         raise HTTPException(status_code=401, detail="invalid or expired token")
 
-# ── health ───────────────────────────────────────────────────
+# ── Health check ──────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
 
-# ── auth endpoints ───────────────────────────────────────────
+# ── Auth endpoints ────────────────────────────────────────────
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
@@ -72,7 +67,7 @@ def login(body: LoginIn):
         raise HTTPException(status_code=401, detail="bad credentials")
     return {"access_token": create_token(user["user_id"])}
 
-# ── simple feed (uploads now live in app/routers/photos.py) ──
+# ── Simple public feed (uploads handled in photos router) ─────
 @app.get("/feed")
 def get_feed(limit: int = 20):
     resp  = table_photos.scan()

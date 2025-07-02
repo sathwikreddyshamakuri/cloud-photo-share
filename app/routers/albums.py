@@ -1,24 +1,41 @@
+"""
+Album CRUD router (DynamoDB version)
+Table name expected:  Albums   (PK: album_id)
+"""
+
+import os, time, uuid
+import boto3
+from boto3.dynamodb.conditions import Attr
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select
+from dotenv import load_dotenv, find_dotenv
+from ..auth import decode_token            # adjust if auth.py path differs
 
-from db import get_session
-from models import Album
-from deps import get_current_user  # your JWT helper
+# ── AWS & table refs ─────────────────────
+load_dotenv(find_dotenv())
+REGION = os.getenv("REGION", "us-east-1")
 
+dyna          = boto3.resource("dynamodb", region_name=REGION)
+table_albums  = dyna.Table("Albums")
+
+# ── Router ───────────────────────────────
 router = APIRouter(prefix="/albums", tags=["albums"])
 
-@router.get("/", response_model=list[Album])
-def list_albums(session: Session = Depends(get_session),
-                user=Depends(get_current_user)):
-    stmt = select(Album).where(Album.owner_id == user.id)
-    return session.exec(stmt).all()
+# Reuse JWT helper from main app
+def current_user(token: str = Depends(decode_token)) -> str:
+    return token
 
-@router.post("/", response_model=Album, status_code=status.HTTP_201_CREATED)
-def create_album(title: str,
-                 session: Session = Depends(get_session),
-                 user=Depends(get_current_user)):
-    album = Album(title=title, owner_id=user.id)
-    session.add(album)
-    session.commit()
-    session.refresh(album)
-    return album
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_album(title: str, user_id: str = Depends(current_user)):
+    album_id = str(uuid.uuid4())
+    table_albums.put_item(Item={
+        "album_id":   album_id,
+        "owner":      user_id,
+        "title":      title,
+        "created_at": int(time.time()),
+    })
+    return {"album_id": album_id, "title": title}
+
+@router.get("/")
+def list_albums(user_id: str = Depends(current_user)):
+    resp = table_albums.scan(FilterExpression=Attr("owner").eq(user_id))
+    return {"albums": resp["Items"]}
