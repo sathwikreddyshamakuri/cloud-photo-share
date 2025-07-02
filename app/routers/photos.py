@@ -1,5 +1,5 @@
 # app/routers/photos.py
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
+from ..main import current_user        
 from pathlib import Path
 from datetime import datetime, timezone
 from PIL import Image, ExifTags
@@ -7,7 +7,7 @@ import time, uuid, os, boto3
 from boto3.dynamodb.conditions import Attr
 
 from ..auth import decode_token
-from ..main import REGION, S3_BUCKET, dyna        # reuse existing clients
+from ..aws_config import REGION, S3_BUCKET, dyna  
 from .albums import table_albums                  # reuse Albums table
 
 router = APIRouter(prefix="/photos", tags=["photos"])
