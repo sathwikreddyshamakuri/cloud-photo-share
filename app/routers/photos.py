@@ -86,3 +86,34 @@ async def upload_photo(
         ExpiresIn=3600)
 
     return {"photo_id": photo_id, "url": url}
+
+# ----------------------- List Photos -------------------------
+from boto3.dynamodb.conditions import Key      # add this import near the top
+
+@router.get("/", tags=["photos"])
+def list_photos(
+    album_id: str,
+    limit: int = 20,
+    user_id: str = Depends(current_user)
+):
+    # verify album ownership
+    resp_album = table_albums.get_item(Key={"album_id": album_id})
+    album = resp_album.get("Item")
+    if not album or album["owner"] != user_id:
+        raise HTTPException(404, "Album not found")
+
+    # you can start with a simple scan while data is small:
+    resp = table_photos.scan(
+        FilterExpression=Attr("album_id").eq(album_id)
+    )
+    items = sorted(resp["Items"], key=lambda x: x["uploaded_at"], reverse=True)[:limit]
+
+    # attach a 1-hour presigned URL for each photo
+    s3 = boto3.client("s3", region_name=REGION)
+    for it in items:
+        it["url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
+            ExpiresIn=3600
+        )
+    return {"photos": items}
