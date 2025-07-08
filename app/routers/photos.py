@@ -43,56 +43,6 @@ def extract_exif(fp: Path):
     except Exception:
         return None, None, None
 
-# ──────────────────────────────────────────────────────────────
-#  POST /photos  — upload a picture to an album
-# ──────────────────────────────────────────────────────────────
-@router.post("/", status_code=status.HTTP_201_CREATED)
-async def upload_photo(
-    album_id: str,
-    file: UploadFile = File(...),
-    user_id: str = Depends(current_user),
-):
-    resp_album = table_albums.get_item(Key={"album_id": album_id})
-    album = resp_album.get("Item")
-    if not album or album["owner"] != user_id:
-        raise HTTPException(404, "Album not found")
-
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(400, "file must be an image")
-
-    tmp_path = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
-    with tmp_path.open("wb") as tmp:
-        tmp.write(await file.read())
-
-    width, height, taken_at = extract_exif(tmp_path)
-
-    photo_id = str(uuid.uuid4())
-    s3_key = f"photos/{album_id}/{photo_id}-{file.filename}"
-    s3 = boto3.client("s3", region_name=REGION)
-    s3.upload_file(
-        str(tmp_path), S3_BUCKET, s3_key,
-        ExtraArgs={"ContentType": file.content_type}
-    )
-    tmp_path.unlink(missing_ok=True)
-
-    table_photos.put_item(Item={
-        "photo_id":  photo_id,
-        "album_id":  album_id,
-        "s3_key":    s3_key,
-        "uploader":  user_id,
-        "width":     width or 0,
-        "height":    height or 0,
-        "taken_at":  taken_at or "",
-        "uploaded_at": int(time.time()),
-    })
-
-    it["thumb_url"] = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": it["thumb_key"]},
-        ExpiresIn=3600,
-    )
-
-# ──────────────────────────────────────────────────────────────
 # ---------- Upload photo + thumbnail ----------
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
@@ -100,7 +50,7 @@ async def upload_photo(
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
-    # verify album ownership
+    #  verify album ownership
     resp_album = table_albums.get_item(Key={"album_id": album_id})
     album = resp_album.get("Item")
     if not album or album["owner"] != user_id:
@@ -109,42 +59,34 @@ async def upload_photo(
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    # save temp file for Pillow
+    #  save temp file
     tmp_path = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
     with tmp_path.open("wb") as tmp:
         tmp.write(await file.read())
 
-    # read EXIF + dimensions
     width, height, taken_at = extract_exif(tmp_path)
 
-    # ---------- create thumbnail ----------
+    #  create 128-px thumbnail
     thumb_path = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
     with Image.open(tmp_path) as img:
-        img.thumbnail((128, 128))          # keep aspect ratio, max side 128 px
-        img.save(thumb_path, "JPEG", quality=85)
+        img.thumbnail((128, 128))
+        img.convert("RGB").save(thumb_path, "JPEG", quality=85)
 
-    # ---------- upload to S3 ----------
+    #  upload originals + thumb to S3
     photo_id = str(uuid.uuid4())
     s3_key    = f"photos/{album_id}/{photo_id}-{file.filename}"
     thumb_key = f"thumbs/{album_id}/{photo_id}.jpg"
     s3 = boto3.client("s3", region_name=REGION)
 
-    # original
-    s3.upload_file(
-        str(tmp_path), S3_BUCKET, s3_key,
-        ExtraArgs={"ContentType": file.content_type}
-    )
-    # thumbnail
-    s3.upload_file(
-        str(thumb_path), S3_BUCKET, thumb_key,
-        ExtraArgs={"ContentType": "image/jpeg"}
-    )
+    s3.upload_file(str(tmp_path),  S3_BUCKET, s3_key,
+                   ExtraArgs={"ContentType": file.content_type})
+    s3.upload_file(str(thumb_path), S3_BUCKET, thumb_key,
+                   ExtraArgs={"ContentType": "image/jpeg"})
 
-    # cleanup temp files
     tmp_path.unlink(missing_ok=True)
     thumb_path.unlink(missing_ok=True)
 
-    # ---------- save metadata ----------
+    #  metadata
     table_photos.put_item(Item={
         "photo_id":  photo_id,
         "album_id":  album_id,
@@ -157,15 +99,9 @@ async def upload_photo(
         "uploaded_at": int(time.time()),
     })
 
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": s3_key},
-        ExpiresIn=3600,
-    )
-    thumb_url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": S3_BUCKET, "Key": thumb_key},
-        ExpiresIn=3600,
-    )
+    url = s3.generate_presigned_url("get_object",
+        Params={"Bucket": S3_BUCKET, "Key": s3_key}, ExpiresIn=3600)
+    thumb_url = s3.generate_presigned_url("get_object",
+        Params={"Bucket": S3_BUCKET, "Key": thumb_key}, ExpiresIn=3600)
 
     return {"photo_id": photo_id, "url": url, "thumb_url": thumb_url}
