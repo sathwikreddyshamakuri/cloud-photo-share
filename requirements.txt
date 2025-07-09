@@ -1,12 +1,14 @@
-# runtime
+# ── runtime ────────────────────────────────
 fastapi>=0.111
 uvicorn[standard]>=0.29
+python-multipart>=0.0.9     # ← required for UploadFile/form parsing
 boto3>=1.34
 python-dotenv>=1.0
 passlib[bcrypt]>=1.7
 PyJWT>=2.8
 Pillow>=11
-# tooling / tests
+
+# ── tooling / tests ────────────────────────
 pytest>=8
 ruff>=0.4
 black>=24
