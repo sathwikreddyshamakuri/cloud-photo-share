@@ -1,29 +1,31 @@
-# .github/workflows/ci.yaml
+# .github/workflows/ci.yml   ← you can keep .yaml or .yml
 name: CI
+
 on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: "3.12"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install deps
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        # test-only deps
-        pip install moto[all]
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # test-only deps
+          pip install moto[all]
 
-    - name: Fake AWS credentials   # keep these so boto3 won’t complain
-      run: |
-        echo "AWS_ACCESS_KEY_ID=fake"       >> $GITHUB_ENV
-        echo "AWS_SECRET_ACCESS_KEY=fake"   >> $GITHUB_ENV
-        echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+      - name: Fake AWS credentials (so boto3 is happy)
+        run: |
+          echo "AWS_ACCESS_KEY_ID=fake"       >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=fake"   >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
 
-    - name: Run tests
-      run: pytest -q
+      - name: Run tests
+        run: pytest -q
