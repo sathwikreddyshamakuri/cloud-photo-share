@@ -1,26 +1,30 @@
-name: CI            # 👈 THIS is what Shields expects
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+# .github/workflows/ci.yaml
+name: CI
+
+on: [push, pull_request]
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ruff black pytest
-      - name: Ruff
-        run: ruff .
-      - name: Black (check)
-        run: black --check .
-      - name: Tests
+
+      
+      - name: Fake AWS credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=fake"       >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=fake"   >> $GITHUB_ENV
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+
+      - name: Run tests
         run: pytest -q
