@@ -5,6 +5,7 @@
 ![CI](https://github.com/sathwikreddyshamakuri/cloud-photo-share/actions/workflows/ci.yaml/badge.svg?branch=main)
 
 
+
 ---
 
 ## Table of Contents
