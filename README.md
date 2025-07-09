@@ -1,7 +1,8 @@
 # Cloud-Photo-Share
 
 > A lightweight, JWT-secured REST API for uploading, managing, and sharing photos in the cloud.
-+ ![CI](https://img.shields.io/github/actions/workflow/status/sathwikreddyshamakuri/cloud-photo-share/ci.yml?branch=main)
+![CI](https://img.shields.io/github/actions/workflow/status/sathwikreddyshamakuri/cloud-photo-share/ci.yaml?branch=main)
+
 
 ---
 
