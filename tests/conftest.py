@@ -1,61 +1,46 @@
-# tests/conftest.py
-import uuid, time, os
-import boto3
-import pytest
-from moto import mock_s3, mock_dynamodb
+import pytest, boto3
+from moto import mock_dynamodb, mock_s3
 
-@pytest.fixture(autouse=True, scope="session")
-def moto_aws():
-    """
-    Start in-memory S3 & Dynamo mocks for every test session.
-    Then create the buckets / tables our app boot code expects,
-    so imports don’t crash.
-    """
-    with mock_s3(), mock_dynamodb():
-        # ---------- minimal bootstrap ----------
-        REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        s3   = boto3.client("s3", region_name=REGION)
-        dyna = boto3.resource("dynamodb", region_name=REGION)
-
-        # S3 bucket needed by generate_presigned_url
-        bucket_name = os.getenv("S3_BUCKET", "photo-share-test")
-        s3.create_bucket(Bucket=bucket_name)
-
-        # Users table
+# ⚠️ moto must be started BEFORE the app imports boto3 clients
+@pytest.fixture(scope="session", autouse=True)
+def _moto():
+    with mock_dynamodb(), mock_s3():
+        # pre-create the tables & bucket the app expects
+        dyna = boto3.resource("dynamodb", region_name="us-east-1")
         dyna.create_table(
             TableName="Users",
             KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
             AttributeDefinitions=[{"AttributeName": "user_id", "AttributeType": "S"}],
             BillingMode="PAY_PER_REQUEST",
         )
-
-        # Albums table
         dyna.create_table(
             TableName="Albums",
             KeySchema=[{"AttributeName": "album_id", "KeyType": "HASH"}],
             AttributeDefinitions=[{"AttributeName": "album_id", "AttributeType": "S"}],
             BillingMode="PAY_PER_REQUEST",
         )
-
-        # PhotoMeta table + GSI
         dyna.create_table(
             TableName="PhotoMeta",
             KeySchema=[{"AttributeName": "photo_id", "KeyType": "HASH"}],
             AttributeDefinitions=[
-                {"AttributeName": "photo_id",   "AttributeType": "S"},
-                {"AttributeName": "album_id",   "AttributeType": "S"},
-                {"AttributeName": "uploaded_at","AttributeType": "N"},
+                {"AttributeName": "photo_id", "AttributeType": "S"},
+                {"AttributeName": "album_id", "AttributeType": "S"},
+                {"AttributeName": "uploaded_at", "AttributeType": "N"},
             ],
             GlobalSecondaryIndexes=[{
                 "IndexName": "album_id-index",
                 "KeySchema": [
-                    {"AttributeName": "album_id",   "KeyType": "HASH"},
-                    {"AttributeName": "uploaded_at","KeyType": "RANGE"},
+                    {"AttributeName": "album_id", "KeyType": "HASH"},
+                    {"AttributeName": "uploaded_at", "KeyType": "RANGE"},
                 ],
                 "Projection": {"ProjectionType": "ALL"},
+                "ProvisionedThroughput": {"ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
             }],
             BillingMode="PAY_PER_REQUEST",
         )
 
-        # run the tests
+        s3 = boto3.client("s3", region_name="us-east-1")
+        s3.create_bucket(Bucket="photo-share-test")
+
+        # now yield control to the tests
         yield
