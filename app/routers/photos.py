@@ -114,7 +114,7 @@ def list_photos(
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # ownership check
+    # ── owner check ───────────────────────────────────────────
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
@@ -122,6 +122,7 @@ def list_photos(
     used_gsi = True
     try:
         from decimal import Decimal
+
         query_kw = {
             "IndexName": "album_id-index",
             "KeyConditionExpression": Key("album_id").eq(album_id),
@@ -130,13 +131,17 @@ def list_photos(
         }
         if last_key:
             raw = json.loads(last_key)
+            # include table-PK (photo_id) + GSI keys
             query_kw["ExclusiveStartKey"] = {
                 "album_id":   raw["album_id"],
                 "uploaded_at": Decimal(str(raw["uploaded_at"])),
+                "photo_id":   raw["photo_id"],
             }
         resp = table_photos.query(**query_kw)
+
     except Exception:
-        used_gsi = False   # fallback to scan
+        # fall back to Scan (ignore last_key)
+        used_gsi = False
         resp = table_photos.scan(
             FilterExpression=Key("album_id").eq(album_id),
             Limit=limit,
@@ -144,7 +149,7 @@ def list_photos(
 
     items = resp["Items"]
 
-    # presign URLs
+    # ── presign URLs ──────────────────────────────────────────
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = s3.generate_presigned_url(
@@ -160,6 +165,7 @@ def list_photos(
 
     next_key = (
         json.dumps(resp["LastEvaluatedKey"], default=str)
-        if used_gsi and "LastEvaluatedKey" in resp else None
+        if used_gsi and "LastEvaluatedKey" in resp
+        else None
     )
     return {"items": items, "next_key": next_key}

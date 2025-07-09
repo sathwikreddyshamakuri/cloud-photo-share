@@ -1,0 +1,10 @@
+[{
+  "Create": {
+    "IndexName": "album_id-index",
+    "KeySchema": [
+      { "AttributeName": "album_id",    "KeyType": "HASH"  },
+      { "AttributeName": "uploaded_at", "KeyType": "RANGE" }
+    ],
+    "Projection": { "ProjectionType": "ALL" }
+  }
+}]
