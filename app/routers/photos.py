@@ -17,15 +17,14 @@ from PIL import Image, ExifTags
 
 from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna
-from .albums import table_albums           # for ownership checks
+from .albums import table_albums
 
-# ── router & Dynamo tables ───────────────────────────────────
+# ── router & table ───────────────────────────────────────────
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
 
 # ── auth helper ──────────────────────────────────────────────
 security = HTTPBearer()
-
 def current_user(
     creds: HTTPAuthorizationCredentials = Depends(security)
 ) -> str:
@@ -34,73 +33,61 @@ def current_user(
     except Exception:
         raise HTTPException(401, "invalid or expired token")
 
-# ── temp folder for Pillow work ──────────────────────────────
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
+# ── temp dir & EXIF helper ───────────────────────────────────
+UPLOAD_DIR = Path("uploads"); UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ── EXIF helper ──────────────────────────────────────────────
 def extract_exif(fp: Path):
     try:
         img = Image.open(fp)
-        width, height = img.size
+        w, h = img.size
         exif = img._getexif() or {}
-        tag_map = {ExifTags.TAGS.get(k): v for k, v in exif.items()}
-        raw = tag_map.get("DateTimeOriginal")
+        raw  = {ExifTags.TAGS.get(k): v for k, v in exif.items()}.get("DateTimeOriginal")
         taken_at = (
             datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
-            .replace(tzinfo=timezone.utc)
-            .isoformat()
-            if raw else None
-        )
-        return width, height, taken_at
+            .replace(tzinfo=timezone.utc).isoformat()
+        ) if raw else None
+        return w, h, taken_at
     except Exception:
         return None, None, None
 
-# ────────────────────────────────────────────────────────────
-#  POST /photos/  — upload + thumbnail
-# ────────────────────────────────────────────────────────────
+# ── POST /photos/ ────────────────────────────────────────────
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     album_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
-    # 1. owner check
+    # ownership
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
-
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    # 2. save temp file
+    # save temp
     tmp = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
     with tmp.open("wb") as out:
         out.write(await file.read())
-
     width, height, taken_at = extract_exif(tmp)
 
-    # 3. generate 128-px thumbnail
+    # thumbnail
     thumb = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
     with Image.open(tmp) as img:
         img.thumbnail((128, 128))
         img.convert("RGB").save(thumb, "JPEG", quality=85)
 
-    # 4. upload to S3
+    # S3 upload
     photo_id  = str(uuid.uuid4())
     s3_key    = f"photos/{album_id}/{photo_id}-{file.filename}"
     thumb_key = f"thumbs/{album_id}/{photo_id}.jpg"
     s3 = boto3.client("s3", region_name=REGION)
-
     s3.upload_file(str(tmp),   S3_BUCKET, s3_key,
                    ExtraArgs={"ContentType": file.content_type})
     s3.upload_file(str(thumb), S3_BUCKET, thumb_key,
                    ExtraArgs={"ContentType": "image/jpeg"})
+    tmp.unlink(missing_ok=True); thumb.unlink(missing_ok=True)
 
-    tmp.unlink(missing_ok=True)
-    thumb.unlink(missing_ok=True)
-
-    # 5. store metadata
+    # Dynamo
     table_photos.put_item(Item={
         "photo_id":   photo_id,
         "album_id":   album_id,
@@ -117,12 +104,9 @@ async def upload_photo(
         Params={"Bucket": S3_BUCKET, "Key": s3_key}, ExpiresIn=3600)
     thumb_url = s3.generate_presigned_url("get_object",
         Params={"Bucket": S3_BUCKET, "Key": thumb_key}, ExpiresIn=3600)
-
     return {"photo_id": photo_id, "url": url, "thumb_url": thumb_url}
 
-# ────────────────────────────────────────────────────────────
-#  GET /photos/ — list with pagination
-# ────────────────────────────────────────────────────────────
+# ── GET /photos/ ─────────────────────────────────────────────
 @router.get("/", tags=["photos"])
 def list_photos(
     album_id: str,
@@ -130,13 +114,13 @@ def list_photos(
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # owner check
+    # ownership
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    # try fast GSI query first
-    try:
+    used_gsi = True
+    try:  # fast query path
         query_kw = {
             "IndexName": "album_id-index",
             "KeyConditionExpression": Key("album_id").eq(album_id),
@@ -147,35 +131,29 @@ def list_photos(
             query_kw["ExclusiveStartKey"] = json.loads(last_key)
         resp = table_photos.query(**query_kw)
     except Exception:
-        # fallback: full scan if GSI missing
-        scan_kw = {
-            "FilterExpression": Key("album_id").eq(album_id),
-            "Limit": limit,
-        }
-        if last_key:
-            scan_kw["ExclusiveStartKey"] = json.loads(last_key)
-        resp = table_photos.scan(**scan_kw)
+        # fallback scan – ignore last_key (schema mismatch)
+        used_gsi = False
+        resp = table_photos.scan(
+            FilterExpression=Key("album_id").eq(album_id),
+            Limit=limit,
+        )
 
     items = resp["Items"]
 
-    # presign original + thumb URLs
+    # presign
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
-            ExpiresIn=3600,
-        )
+            ExpiresIn=3600)
         it["thumb_url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["thumb_key"]},
-            ExpiresIn=3600,
-        )
+            ExpiresIn=3600)
 
-    return {
-        "items": items,
-        "next_key": (
-            json.dumps(resp["LastEvaluatedKey"], default=str)
-            if "LastEvaluatedKey" in resp else None
-        ),
-    }
+    next_key = (
+        json.dumps(resp["LastEvaluatedKey"], default=str)
+        if used_gsi and "LastEvaluatedKey" in resp else None
+    )
+    return {"items": items, "next_key": next_key}
