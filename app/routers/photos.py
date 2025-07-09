@@ -114,13 +114,14 @@ def list_photos(
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # ownership
+    # ownership check
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
     used_gsi = True
-    try:  # fast query path
+    try:
+        from decimal import Decimal
         query_kw = {
             "IndexName": "album_id-index",
             "KeyConditionExpression": Key("album_id").eq(album_id),
@@ -128,11 +129,14 @@ def list_photos(
             "Limit": limit,
         }
         if last_key:
-            query_kw["ExclusiveStartKey"] = json.loads(last_key)
+            raw = json.loads(last_key)
+            query_kw["ExclusiveStartKey"] = {
+                "album_id":   raw["album_id"],
+                "uploaded_at": Decimal(str(raw["uploaded_at"])),
+            }
         resp = table_photos.query(**query_kw)
     except Exception:
-        # fallback scan – ignore last_key (schema mismatch)
-        used_gsi = False
+        used_gsi = False   # fallback to scan
         resp = table_photos.scan(
             FilterExpression=Key("album_id").eq(album_id),
             Limit=limit,
@@ -140,17 +144,19 @@ def list_photos(
 
     items = resp["Items"]
 
-    # presign
+    # presign URLs
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
-            ExpiresIn=3600)
+            ExpiresIn=3600,
+        )
         it["thumb_url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["thumb_key"]},
-            ExpiresIn=3600)
+            ExpiresIn=3600,
+        )
 
     next_key = (
         json.dumps(resp["LastEvaluatedKey"], default=str)
