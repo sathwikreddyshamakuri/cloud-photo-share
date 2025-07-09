@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:                      # ←—— add this block
+    env:                      
       AWS_ACCESS_KEY_ID: dummy
       AWS_SECRET_ACCESS_KEY: dummy
       AWS_DEFAULT_REGION: us-east-1
@@ -27,6 +27,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+        
+      - name: Add repo to PYTHONPATH
+        run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
 
       - name: Run tests
         run: pytest -q
