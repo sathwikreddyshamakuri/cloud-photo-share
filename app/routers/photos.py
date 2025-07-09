@@ -1,35 +1,44 @@
 """
 Photo upload + list (with 128-px thumbnails & pagination)
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+import os, time, uuid, json
 from pathlib import Path
 from datetime import datetime, timezone
-from PIL import Image, ExifTags
-import time, uuid, json, boto3, os
+
+import boto3
 from boto3.dynamodb.conditions import Key
+from fastapi import (
+    APIRouter, UploadFile, File,
+    HTTPException, Depends, status
+)
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from PIL import Image, ExifTags
 
 from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna
-from .albums import table_albums           # Album ownership checks
+from .albums import table_albums           # for ownership checks
 
-# ── router & tables ───────────────────────────────────────────
+# ── router & Dynamo tables ───────────────────────────────────
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
 
-# ── auth helper ───────────────────────────────────────────────
+# ── auth helper ──────────────────────────────────────────────
 security = HTTPBearer()
-def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
+
+def current_user(
+    creds: HTTPAuthorizationCredentials = Depends(security)
+) -> str:
     try:
         return decode_token(creds.credentials)
     except Exception:
         raise HTTPException(401, "invalid or expired token")
 
-# ── temp folder ───────────────────────────────────────────────
+# ── temp folder for Pillow work ──────────────────────────────
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ── EXIF helper ───────────────────────────────────────────────
+# ── EXIF helper ──────────────────────────────────────────────
 def extract_exif(fp: Path):
     try:
         img = Image.open(fp)
@@ -47,16 +56,16 @@ def extract_exif(fp: Path):
     except Exception:
         return None, None, None
 
-# ─────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 #  POST /photos/  — upload + thumbnail
-# ─────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     album_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
-    # 1 ownership check
+    # 1. owner check
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
@@ -64,32 +73,34 @@ async def upload_photo(
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    # 2 save temp file
+    # 2. save temp file
     tmp = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
     with tmp.open("wb") as out:
         out.write(await file.read())
 
     width, height, taken_at = extract_exif(tmp)
 
-    # 3 make thumbnail 128-px
+    # 3. generate 128-px thumbnail
     thumb = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
     with Image.open(tmp) as img:
         img.thumbnail((128, 128))
         img.convert("RGB").save(thumb, "JPEG", quality=85)
 
-    # 4 upload to S3
+    # 4. upload to S3
     photo_id  = str(uuid.uuid4())
     s3_key    = f"photos/{album_id}/{photo_id}-{file.filename}"
     thumb_key = f"thumbs/{album_id}/{photo_id}.jpg"
     s3 = boto3.client("s3", region_name=REGION)
+
     s3.upload_file(str(tmp),   S3_BUCKET, s3_key,
                    ExtraArgs={"ContentType": file.content_type})
     s3.upload_file(str(thumb), S3_BUCKET, thumb_key,
                    ExtraArgs={"ContentType": "image/jpeg"})
+
     tmp.unlink(missing_ok=True)
     thumb.unlink(missing_ok=True)
 
-    # 5 save metadata
+    # 5. store metadata
     table_photos.put_item(Item={
         "photo_id":   photo_id,
         "album_id":   album_id,
@@ -109,9 +120,9 @@ async def upload_photo(
 
     return {"photo_id": photo_id, "url": url, "thumb_url": thumb_url}
 
-# ─────────────────────────────────────────────────────────────
-#  GET /photos/  — paginated list
-# ─────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────
+#  GET /photos/ — list with pagination
+# ────────────────────────────────────────────────────────────
 @router.get("/", tags=["photos"])
 def list_photos(
     album_id: str,
@@ -119,23 +130,35 @@ def list_photos(
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # ownership check
+    # owner check
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    kwargs = {
-        "IndexName": "album_id-index",
-        "KeyConditionExpression": Key("album_id").eq(album_id),
-        "ScanIndexForward": False,
-        "Limit": limit,
-    }
-    if last_key:
-        kwargs["ExclusiveStartKey"] = json.loads(last_key)
+    # try fast GSI query first
+    try:
+        query_kw = {
+            "IndexName": "album_id-index",
+            "KeyConditionExpression": Key("album_id").eq(album_id),
+            "ScanIndexForward": False,
+            "Limit": limit,
+        }
+        if last_key:
+            query_kw["ExclusiveStartKey"] = json.loads(last_key)
+        resp = table_photos.query(**query_kw)
+    except Exception:
+        # fallback: full scan if GSI missing
+        scan_kw = {
+            "FilterExpression": Key("album_id").eq(album_id),
+            "Limit": limit,
+        }
+        if last_key:
+            scan_kw["ExclusiveStartKey"] = json.loads(last_key)
+        resp = table_photos.scan(**scan_kw)
 
-    resp  = table_photos.query(**kwargs)
     items = resp["Items"]
 
+    # presign original + thumb URLs
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = s3.generate_presigned_url(
