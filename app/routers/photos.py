@@ -133,9 +133,10 @@ def list_photos(
     if last_key:
         kwargs["ExclusiveStartKey"] = json.loads(last_key)
 
-    resp   = table_photos.query(**kwargs)
-    items  = resp["Items"]
-    s3     = boto3.client("s3", region_name=REGION)
+    resp  = table_photos.query(**kwargs)
+    items = resp["Items"]
+
+    s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
@@ -150,7 +151,8 @@ def list_photos(
 
     return {
         "items": items,
-        "next_key": json.dumps(resp["LastEvaluatedKey"])
-        if "LastEvaluatedKey" in resp else None,
+        "next_key": (
+            json.dumps(resp["LastEvaluatedKey"], default=str)
+            if "LastEvaluatedKey" in resp else None
+        ),
     }
-
