@@ -134,8 +134,7 @@ async def upload_photo(
     )
     return {"photo_id": photo_id, "url": url, "thumb_url": thumb_url}
 
-
-# ───────────────────────────────────────── GET /photos
+# ── GET /photos/ ─────────────────────────────────────────────
 @router.get("/", tags=["photos"])
 def list_photos(
     album_id: str,
@@ -143,54 +142,56 @@ def list_photos(
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # 1. owner check
+    # ── 1) owner check ───────────────────────────────────────
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    # 2. primary path: query the GSI
-    query_kw = {
-        "IndexName": "album_id-index",
-        "KeyConditionExpression": Key("album_id").eq(album_id),
-        "ScanIndexForward": False,  # newest first
-        "Limit": limit,
-    }
-    if last_key:
-        raw = json.loads(last_key)
-        query_kw["ExclusiveStartKey"] = {
-            "album_id": raw["album_id"],
+    # helper → build an ExclusiveStartKey dict from the incoming token
+    def decode_start(token: str | None):
+        if not token:
+            return None
+        raw = json.loads(token)
+        return {
+            "album_id":   raw["album_id"],
             "uploaded_at": Decimal(str(raw["uploaded_at"])),
-            "photo_id": raw["photo_id"],
+            "photo_id":   raw["photo_id"],
         }
 
-    try:
-        resp = table_photos.query(**query_kw)
-    except Exception:
-        # fallback: scan (moto/Dynamo local may not support GSI)
-        scan_kw = {
-            "FilterExpression": Key("album_id").eq(album_id),
-            "Limit": limit,
-        }
-        if last_key:
-            scan_kw["ExclusiveStartKey"] = json.loads(last_key)
-        resp = table_photos.scan(**scan_kw)
+    eks = decode_start(last_key)
+    remaining = limit
+    gathered: list[dict] = []
+    start_for_next_page: dict | None = None
 
-    items: list[dict[str, Any]] = resp["Items"]
+    while remaining > 0:
+        try:
+            resp = table_photos.query(
+                IndexName="album_id-index",
+                KeyConditionExpression=Key("album_id").eq(album_id),
+                ScanIndexForward=False,
+                Limit=remaining,
+                **({"ExclusiveStartKey": eks} if eks else {}),
+            )
+        except Exception:
+            resp = table_photos.scan(
+                FilterExpression=Key("album_id").eq(album_id),
+                Limit=remaining,
+                **({"ExclusiveStartKey": eks} if eks else {}),
+            )
 
-    # 3. Remove the *single* duplicate row that can re-appear
-    if last_key:
-        prev = json.loads(last_key)
-        prev_ts = str(prev["uploaded_at"])
-        prev_id = prev["photo_id"]
+        gathered.extend(resp["Items"])
+        remaining = limit - len(gathered)
 
-        def is_exact_dup(it: dict[str, Any]) -> bool:
-            return str(it.get("uploaded_at")) == prev_ts and it.get("photo_id") == prev_id
+        if "LastEvaluatedKey" not in resp or remaining == 0:
+            start_for_next_page = resp.get("LastEvaluatedKey")
+            break
 
-        items = [it for it in items if not is_exact_dup(it)]
+        # continue fetching the same page
+        eks = resp["LastEvaluatedKey"]
 
-    # 4. Sign URLs
+    # ── 2) presign URLs ──────────────────────────────────────
     s3 = boto3.client("s3", region_name=REGION)
-    for it in items:
+    for it in gathered:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
@@ -202,10 +203,8 @@ def list_photos(
             ExpiresIn=3600,
         )
 
-    # 5. next_key only if we really have more
-    if len(items) == limit and "LastEvaluatedKey" in resp:
-        next_key = json.dumps(resp["LastEvaluatedKey"], default=str)
-    else:
-        next_key = None
+    next_key = (
+        json.dumps(start_for_next_page, default=str) if start_for_next_page else None
+    )
+    return {"items": gathered, "next_key": next_key}
 
-    return {"items": items, "next_key": next_key}
