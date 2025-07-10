@@ -9,12 +9,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:                      
+
+    # ── HERE ─────────────────────────────────────────────
+    env:
       AWS_ACCESS_KEY_ID: dummy
       AWS_SECRET_ACCESS_KEY: dummy
-      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
       REGION: us-east-1
-      S3_BUCKET: test-bucket         # the magic one we were missing
+      S3_BUCKET: test-bucket
+      JWT_SECRET: unit-test-secret       # ▶ new line
+      APP_SECRET_NAME: photo-share/dev/APP_CONFIG
+    # ─────────────────────────────────────────────────────
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-        
+
       - name: Add repo to PYTHONPATH
         run: echo "PYTHONPATH=$PWD" >> $GITHUB_ENV
 

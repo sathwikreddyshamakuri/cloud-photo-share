@@ -1,5 +1,5 @@
 import os, jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from passlib.hash import bcrypt
 from dotenv import load_dotenv, find_dotenv
 
@@ -21,7 +21,7 @@ def verify_pw(plain: str, hashed: str) -> bool:
 def create_token(user_id: str, exp_secs: int = 3600) -> str:
     payload = {
         "sub": user_id,
-        "exp": datetime.utcnow() + timedelta(seconds=exp_secs)
+        "exp": datetime.now(tz=timezone.utc) + timedelta(seconds=exp_secs),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGO)
 
