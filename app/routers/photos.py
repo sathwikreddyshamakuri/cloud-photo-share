@@ -197,5 +197,8 @@ def list_photos(
         it["url"] = presign(s3, it["s3_key"])
         it["thumb_url"] = presign(s3, it["thumb_key"])
 
-    next_key = json.dumps(cursor, default=str) if cursor else None
+    # ─── **NEW**: only return next_key if we really filled the page ───
+    has_more = cursor is not None and len(items) == limit
+    next_key = json.dumps(cursor, default=str) if has_more else None
+
     return {"items": items, "next_key": next_key}
