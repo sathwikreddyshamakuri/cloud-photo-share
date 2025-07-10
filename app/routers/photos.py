@@ -1,19 +1,28 @@
 """
-Photo upload + deterministic pagination (Moto-safe)
+Photo upload & listing (128-px thumbnails + cursor-based pagination)
 """
 
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, Dict, List
 
 import boto3
 from boto3.dynamodb.conditions import Key
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from PIL import ExifTags, Image
 
@@ -21,161 +30,208 @@ from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna
 from .albums import table_albums
 
-# ── setup ─────────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+# DynamoDB table handle & router                                              #
+# --------------------------------------------------------------------------- #
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
+
+# --------------------------------------------------------------------------- #
+# Auth helper (shared by every route)                                         #
+# --------------------------------------------------------------------------- #
 security = HTTPBearer()
-UPLOAD_DIR = Path("uploads"); UPLOAD_DIR.mkdir(exist_ok=True)
 
 
-def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
+def current_user(
+    creds: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
     try:
         return decode_token(creds.credentials)
     except Exception:
-        raise HTTPException(401, "invalid or expired token")
+        raise HTTPException(status_code=401, detail="invalid or expired token")
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+# Local helpers                                                               #
+# --------------------------------------------------------------------------- #
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
+
 def extract_exif(fp: Path) -> tuple[int | None, int | None, str | None]:
+    """
+    Return (width, height, taken_at_iso) from the file *if* EXIF exists.
+    Otherwise (None, None, None).
+    """
     try:
         img = Image.open(fp)
         w, h = img.size
-        raw = {ExifTags.TAGS.get(k): v for k, v in (img._getexif() or {}).items()}.get(
-            "DateTimeOriginal"
-        )
-        taken = (
-            datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
+        exif_data = img._getexif() or {}
+        tag_map = {ExifTags.TAGS.get(k): v for k, v in exif_data.items()}
+        raw_dt = tag_map.get("DateTimeOriginal")
+        taken_at = (
+            datetime.strptime(raw_dt, "%Y:%m:%d %H:%M:%S")
             .replace(tzinfo=timezone.utc)
             .isoformat()
-            if raw
+            if raw_dt
             else None
         )
-        return w, h, taken
-    except Exception:  # pragma: no cover
+        return w, h, taken_at
+    except Exception:  # pillow failed – treat as “no EXIF”
         return None, None, None
 
 
-def presign(item: dict) -> dict:
-    s3 = boto3.client("s3", region_name=REGION)
-    item["url"] = s3.generate_presigned_url(
-        "get_object", Params={"Bucket": S3_BUCKET, "Key": item["s3_key"]}, ExpiresIn=3600
+def presign(s3: boto3.client, key: str) -> str:
+    """Generate a 1-h presigned URL for an object key."""
+    return s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": key},
+        ExpiresIn=3600,
     )
-    item["thumb_url"] = s3.generate_presigned_url(
-        "get_object", Params={"Bucket": S3_BUCKET, "Key": item["thumb_key"]}, ExpiresIn=3600
-    )
-    return item
 
 
-# ── POST /photos ──────────────────────────────────────────────────────────────
+# --------------------------------------------------------------------------- #
+# POST /photos/  – upload single image                                        #
+# --------------------------------------------------------------------------- #
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     album_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
+    # ---- 1) ensure album exists & belongs to caller ---------------------- #
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
+
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    tmp = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
-    with tmp.open("wb") as fh:
-        fh.write(await file.read())
+    # ---- 2) save file to tmp & read EXIF --------------------------------- #
+    tmp_path = UPLOAD_DIR / f"orig-{uuid.uuid4()}"
+    tmp_path.write_bytes(await file.read())
+    width, height, taken_at = extract_exif(tmp_path)
 
-    w, h, taken_at = extract_exif(tmp)
-
-    thumb = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
-    with Image.open(tmp) as img:
+    # ---- 3) create 128-px thumbnail -------------------------------------- #
+    thumb_path = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
+    with Image.open(tmp_path) as img:
         img.thumbnail((128, 128))
-        img.convert("RGB").save(thumb, "JPEG", quality=85)
+        img.convert("RGB").save(thumb_path, "JPEG", quality=85)
 
+    # ---- 4) push both objects to S3 -------------------------------------- #
     photo_id = str(uuid.uuid4())
     s3_key = f"photos/{album_id}/{photo_id}-{file.filename}"
     thumb_key = f"thumbs/{album_id}/{photo_id}.jpg"
+
     s3 = boto3.client("s3", region_name=REGION)
-    s3.upload_file(str(tmp), S3_BUCKET, s3_key,
-                   ExtraArgs={"ContentType": file.content_type})
-    s3.upload_file(str(thumb), S3_BUCKET, thumb_key,
-                   ExtraArgs={"ContentType": "image/jpeg"})
-    tmp.unlink(missing_ok=True); thumb.unlink(missing_ok=True)
+    s3.upload_file(
+        str(tmp_path),
+        S3_BUCKET,
+        s3_key,
+        ExtraArgs={"ContentType": file.content_type},
+    )
+    s3.upload_file(
+        str(thumb_path),
+        S3_BUCKET,
+        thumb_key,
+        ExtraArgs={"ContentType": "image/jpeg"},
+    )
+    tmp_path.unlink(missing_ok=True)
+    thumb_path.unlink(missing_ok=True)
 
-    table_photos.put_item(Item={
+    # ---- 5) write metadata row ------------------------------------------- #
+    table_photos.put_item(
+        Item={
+            "photo_id": photo_id,
+            "album_id": album_id,
+            "s3_key": s3_key,
+            "thumb_key": thumb_key,
+            "uploader": user_id,
+            "width": width or 0,
+            "height": height or 0,
+            "taken_at": taken_at or "",
+            "uploaded_at": int(time.time()),
+        }
+    )
+
+    # ---- 6) response ----------------------------------------------------- #
+    return {
         "photo_id": photo_id,
-        "album_id": album_id,
-        "s3_key":   s3_key,
-        "thumb_key": thumb_key,
-        "uploader": user_id,
-        "width":    w or 0,
-        "height":   h or 0,
-        "taken_at": taken_at or "",
-        "uploaded_at": int(time.time()),
-    })
-
-    return presign({
-        "photo_id": photo_id,
-        "s3_key":   s3_key,
-        "thumb_key": thumb_key,
-    })
+        "url": presign(s3, s3_key),
+        "thumb_url": presign(s3, thumb_key),
+    }
 
 
-# ── GET /photos (robust pagination) ──────────────────────────────────────────
-@router.get("/")
+# --------------------------------------------------------------------------- #
+# GET /photos/  – list photos in an album (cursor pagination)                #
+# --------------------------------------------------------------------------- #
+@router.get("/", tags=["photos"])
 def list_photos(
     album_id: str,
     limit: int = 20,
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # owner check
+    # ---- 1) album ownership --------------------------------------------- #
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    def gsi_query(start: dict | None) -> dict:
-        q = {
-            "IndexName": "album_id-index",
-            "KeyConditionExpression": Key("album_id").eq(album_id),
-            "ScanIndexForward": False,
+    # ---- 2) build primary query (GSI) ------------------------------------ #
+    query_kw: Dict[str, Any] = {
+        "IndexName": "album_id-index",
+        "KeyConditionExpression": Key("album_id").eq(album_id),
+        "ScanIndexForward": False,  # newest first
+        "Limit": limit,
+    }
+
+    if last_key:
+        raw = json.loads(last_key)
+        query_kw["ExclusiveStartKey"] = {
+            "album_id": raw["album_id"],
+            "photo_id": raw["photo_id"],
+            "uploaded_at": Decimal(str(raw["uploaded_at"])),
+        }
+
+    # ---- 3) fetch *at most* `limit` items -------------------------------- #
+    items: List[Dict[str, Any]] = []
+    cursor: Dict[str, Any] | None = None
+
+    try:
+        while len(items) < limit:
+            resp = table_photos.query(**query_kw)
+            items.extend(resp["Items"])
+            cursor = resp.get("LastEvaluatedKey")
+            if len(items) >= limit or cursor is None:
+                break
+            # continue loop → pull next page
+            query_kw["ExclusiveStartKey"] = cursor
+    except Exception:
+        # Fallback Scan for Moto (still keep size logic)
+        scan_kw = {
+            "FilterExpression": Key("album_id").eq(album_id),
             "Limit": limit,
         }
-        if start:
-            q["ExclusiveStartKey"] = start
-        return table_photos.query(**q)
+        if last_key:
+            scan_kw["ExclusiveStartKey"] = json.loads(last_key)
 
-    items: list[dict] = []
-    cursor = json.loads(last_key) if last_key else None
-
-    while len(items) < limit:
-        resp = gsi_query(cursor)
-        items.extend(resp["Items"])
-
-        if "LastEvaluatedKey" not in resp:   # nothing left
-            cursor = None
-            break
-
-        cursor = resp["LastEvaluatedKey"]
-        if len(items) >= limit:
-            break
-
-    # ── Moto quirk: still not enough?  do one scan pass ──
-    if len(items) < limit:
-        seen = {it["photo_id"] for it in items}
-        extra = table_photos.scan(
-            FilterExpression=Key("album_id").eq(album_id)
-        )["Items"]
-        extra_sorted = sorted(
-            extra, key=lambda x: int(x["uploaded_at"]), reverse=True
-        )
-        for it in extra_sorted:
-            if it["photo_id"] not in seen:
-                items.append(it)
-            if len(items) == limit:
+        while len(items) < limit:
+            resp = table_photos.scan(**scan_kw)
+            items.extend(resp["Items"])
+            cursor = resp.get("LastEvaluatedKey")
+            if len(items) >= limit or cursor is None:
                 break
-        cursor = None  # after a scan we consider the list exhausted
+            scan_kw["ExclusiveStartKey"] = cursor
 
-    items = items[:limit]
-    next_key = json.dumps(cursor, default=str) if cursor else None
-    items = [presign(it) for it in items]
+    items = items[:limit]  # truncate in case we overshot
+
+    # ---- 4) sign URLs ---------------------------------------------------- #
+    s3 = boto3.client("s3", region_name=REGION)
+    for it in items:
+        it["url"] = presign(s3, it["s3_key"])
+        it["thumb_url"] = presign(s3, it["thumb_key"])
+
+    # ---- 5) only emit next_key when we hit *exactly* `limit` items ------- #
+    next_key = json.dumps(cursor, default=str) if cursor and len(items) == limit else None
 
     return {"items": items, "next_key": next_key}
