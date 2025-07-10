@@ -1,5 +1,5 @@
 """
-Photo upload & listing (128-px thumbnails + cursor-based pagination)
+Photo upload & list (128-px thumbs + cursor pagination)
 """
 
 from __future__ import annotations
@@ -30,15 +30,10 @@ from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna
 from .albums import table_albums
 
-# --------------------------------------------------------------------------- #
-# DynamoDB table handle & router                                              #
-# --------------------------------------------------------------------------- #
+# ──────────────────────────────────────────────────────────────────────────────
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
 
-# --------------------------------------------------------------------------- #
-# Auth helper (shared by every route)                                         #
-# --------------------------------------------------------------------------- #
 security = HTTPBearer()
 
 
@@ -48,41 +43,35 @@ def current_user(
     try:
         return decode_token(creds.credentials)
     except Exception:
-        raise HTTPException(status_code=401, detail="invalid or expired token")
+        raise HTTPException(401, "invalid or expired token")
 
 
-# --------------------------------------------------------------------------- #
-# Local helpers                                                               #
-# --------------------------------------------------------------------------- #
+# ────────────────────────── local helpers ─────────────────────────────────────
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 def extract_exif(fp: Path) -> tuple[int | None, int | None, str | None]:
-    """
-    Return (width, height, taken_at_iso) from the file *if* EXIF exists.
-    Otherwise (None, None, None).
-    """
     try:
         img = Image.open(fp)
         w, h = img.size
-        exif_data = img._getexif() or {}
-        tag_map = {ExifTags.TAGS.get(k): v for k, v in exif_data.items()}
-        raw_dt = tag_map.get("DateTimeOriginal")
+        exif = img._getexif() or {}
+        raw = {ExifTags.TAGS.get(k): v for k, v in exif.items()}.get(
+            "DateTimeOriginal"
+        )
         taken_at = (
-            datetime.strptime(raw_dt, "%Y:%m:%d %H:%M:%S")
+            datetime.strptime(raw, "%Y:%m:%d %H:%M:%S")
             .replace(tzinfo=timezone.utc)
             .isoformat()
-            if raw_dt
+            if raw
             else None
         )
         return w, h, taken_at
-    except Exception:  # pillow failed – treat as “no EXIF”
+    except Exception:
         return None, None, None
 
 
 def presign(s3: boto3.client, key: str) -> str:
-    """Generate a 1-h presigned URL for an object key."""
     return s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": S3_BUCKET, "Key": key},
@@ -90,56 +79,40 @@ def presign(s3: boto3.client, key: str) -> str:
     )
 
 
-# --------------------------------------------------------------------------- #
-# POST /photos/  – upload single image                                        #
-# --------------------------------------------------------------------------- #
+# ────────────────────────── POST /photos/ ─────────────────────────────────────
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def upload_photo(
     album_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
-    # ---- 1) ensure album exists & belongs to caller ---------------------- #
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
-
     if not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    # ---- 2) save file to tmp & read EXIF --------------------------------- #
-    tmp_path = UPLOAD_DIR / f"orig-{uuid.uuid4()}"
-    tmp_path.write_bytes(await file.read())
-    width, height, taken_at = extract_exif(tmp_path)
+    # save temp
+    tmp = UPLOAD_DIR / f"orig-{uuid.uuid4()}"
+    tmp.write_bytes(await file.read())
+    width, height, taken_at = extract_exif(tmp)
 
-    # ---- 3) create 128-px thumbnail -------------------------------------- #
-    thumb_path = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
-    with Image.open(tmp_path) as img:
+    # thumbnail
+    thumb = UPLOAD_DIR / f"thumb-{uuid.uuid4()}.jpg"
+    with Image.open(tmp) as img:
         img.thumbnail((128, 128))
-        img.convert("RGB").save(thumb_path, "JPEG", quality=85)
+        img.convert("RGB").save(thumb, "JPEG", quality=85)
 
-    # ---- 4) push both objects to S3 -------------------------------------- #
+    # S3
     photo_id = str(uuid.uuid4())
     s3_key = f"photos/{album_id}/{photo_id}-{file.filename}"
     thumb_key = f"thumbs/{album_id}/{photo_id}.jpg"
-
     s3 = boto3.client("s3", region_name=REGION)
-    s3.upload_file(
-        str(tmp_path),
-        S3_BUCKET,
-        s3_key,
-        ExtraArgs={"ContentType": file.content_type},
-    )
-    s3.upload_file(
-        str(thumb_path),
-        S3_BUCKET,
-        thumb_key,
-        ExtraArgs={"ContentType": "image/jpeg"},
-    )
-    tmp_path.unlink(missing_ok=True)
-    thumb_path.unlink(missing_ok=True)
+    s3.upload_file(str(tmp), S3_BUCKET, s3_key, ExtraArgs={"ContentType": file.content_type})
+    s3.upload_file(str(thumb), S3_BUCKET, thumb_key, ExtraArgs={"ContentType": "image/jpeg"})
+    tmp.unlink(missing_ok=True)
+    thumb.unlink(missing_ok=True)
 
-    # ---- 5) write metadata row ------------------------------------------- #
     table_photos.put_item(
         Item={
             "photo_id": photo_id,
@@ -154,7 +127,6 @@ async def upload_photo(
         }
     )
 
-    # ---- 6) response ----------------------------------------------------- #
     return {
         "photo_id": photo_id,
         "url": presign(s3, s3_key),
@@ -162,26 +134,22 @@ async def upload_photo(
     }
 
 
-# --------------------------------------------------------------------------- #
-# GET /photos/  – list photos in an album (cursor pagination)                #
-# --------------------------------------------------------------------------- #
-@router.get("/", tags=["photos"])
+# ────────────────────────── GET /photos/ ──────────────────────────────────────
+@router.get("/")
 def list_photos(
     album_id: str,
     limit: int = 20,
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
-    # ---- 1) album ownership --------------------------------------------- #
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    # ---- 2) build primary query (GSI) ------------------------------------ #
     query_kw: Dict[str, Any] = {
         "IndexName": "album_id-index",
         "KeyConditionExpression": Key("album_id").eq(album_id),
-        "ScanIndexForward": False,  # newest first
+        "ScanIndexForward": False,
         "Limit": limit,
     }
 
@@ -193,7 +161,6 @@ def list_photos(
             "uploaded_at": Decimal(str(raw["uploaded_at"])),
         }
 
-    # ---- 3) fetch *at most* `limit` items -------------------------------- #
     items: List[Dict[str, Any]] = []
     cursor: Dict[str, Any] | None = None
 
@@ -202,12 +169,11 @@ def list_photos(
             resp = table_photos.query(**query_kw)
             items.extend(resp["Items"])
             cursor = resp.get("LastEvaluatedKey")
-            if len(items) >= limit or cursor is None:
+            if cursor is None:
                 break
-            # continue loop → pull next page
             query_kw["ExclusiveStartKey"] = cursor
     except Exception:
-        # Fallback Scan for Moto (still keep size logic)
+        # fallback scan for moto
         scan_kw = {
             "FilterExpression": Key("album_id").eq(album_id),
             "Limit": limit,
@@ -219,19 +185,17 @@ def list_photos(
             resp = table_photos.scan(**scan_kw)
             items.extend(resp["Items"])
             cursor = resp.get("LastEvaluatedKey")
-            if len(items) >= limit or cursor is None:
+            if cursor is None:
                 break
             scan_kw["ExclusiveStartKey"] = cursor
 
-    items = items[:limit]  # truncate in case we overshot
+    # truncate to exactly the requested page size
+    items = items[:limit]
 
-    # ---- 4) sign URLs ---------------------------------------------------- #
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = presign(s3, it["s3_key"])
         it["thumb_url"] = presign(s3, it["thumb_key"])
 
-    # ---- 5) only emit next_key when we hit *exactly* `limit` items ------- #
-    next_key = json.dumps(cursor, default=str) if cursor and len(items) == limit else None
-
+    next_key = json.dumps(cursor, default=str) if cursor else None
     return {"items": items, "next_key": next_key}
