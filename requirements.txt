@@ -5,9 +5,10 @@ python-multipart==0.0.9          # FastAPI form-data
 email-validator==2.1.1           # pydantic EmailStr
 boto3==1.39.4
 python-dotenv==1.1.1
-passlib[bcrypt]==1.7.4            # 1.7.5+ not released yet
+passlib[bcrypt]==1.7.4           # 1.7.5+ not released yet
 PyJWT==2.8.0
 Pillow==11.3.0
+pydantic-settings==2.1.0         # BaseSettings replacement
 
 # ── dev / CI ────────────────────────────────────────────
 pytest==8.2.2
