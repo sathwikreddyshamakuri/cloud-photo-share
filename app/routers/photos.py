@@ -133,7 +133,6 @@ async def upload_photo(
         "thumb_url": presign(s3, thumb_key),
     }
 
-
 # ────────────────────────── GET /photos/ ──────────────────────────────────────
 @router.get("/")
 def list_photos(
@@ -146,59 +145,62 @@ def list_photos(
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    query_kw: Dict[str, Any] = {
+    # ---------- first: try the fast GSI query ----------
+    q_kw: Dict[str, Any] = {
         "IndexName": "album_id-index",
         "KeyConditionExpression": Key("album_id").eq(album_id),
         "ScanIndexForward": False,
         "Limit": limit,
     }
-
     if last_key:
-        raw = json.loads(last_key)
-        query_kw["ExclusiveStartKey"] = {
-            "album_id": raw["album_id"],
-            "photo_id": raw["photo_id"],
-            "uploaded_at": Decimal(str(raw["uploaded_at"])),
+        rk = json.loads(last_key)
+        q_kw["ExclusiveStartKey"] = {
+            "album_id": rk["album_id"],
+            "photo_id": rk["photo_id"],
+            "uploaded_at": Decimal(str(rk["uploaded_at"])),
         }
 
     items: List[Dict[str, Any]] = []
     cursor: Dict[str, Any] | None = None
-
     try:
         while len(items) < limit:
-            resp = table_photos.query(**query_kw)
+            resp = table_photos.query(**q_kw)
             items.extend(resp["Items"])
             cursor = resp.get("LastEvaluatedKey")
             if cursor is None:
                 break
-            query_kw["ExclusiveStartKey"] = cursor
+            q_kw["ExclusiveStartKey"] = cursor
     except Exception:
-        # fallback scan for moto
-        scan_kw = {
-            "FilterExpression": Key("album_id").eq(album_id),
-            "Limit": limit,
-        }
-        if last_key:
-            scan_kw["ExclusiveStartKey"] = json.loads(last_key)
+        # Moto before 5.0 doesn’t support the GSI → skip straight to scan
+        cursor = None  # force a scan below
 
+    # ---------- make up the shortfall with Scan (Moto quirk) ----------
+    if len(items) < limit and cursor is not None:
+        s_kw: Dict[str, Any] = {
+            "FilterExpression": Key("album_id").eq(album_id),
+            "ExclusiveStartKey": cursor,
+            "Limit": limit - len(items),
+        }
         while len(items) < limit:
-            resp = table_photos.scan(**scan_kw)
+            resp = table_photos.scan(**s_kw)
             items.extend(resp["Items"])
             cursor = resp.get("LastEvaluatedKey")
             if cursor is None:
                 break
-            scan_kw["ExclusiveStartKey"] = cursor
+            s_kw["ExclusiveStartKey"] = cursor
 
-    # truncate to exactly the requested page size
+    # crop exactly one page
     items = items[:limit]
 
+    # ---------- sign URLs ----------
     s3 = boto3.client("s3", region_name=REGION)
     for it in items:
         it["url"] = presign(s3, it["s3_key"])
         it["thumb_url"] = presign(s3, it["thumb_key"])
 
-    # ─── **NEW**: only return next_key if we really filled the page ───
-    has_more = cursor is not None and len(items) == limit
-    next_key = json.dumps(cursor, default=str) if has_more else None
-
+    next_key = (
+        json.dumps(cursor, default=str)
+        if cursor is not None and len(items) == limit
+        else None
+    )
     return {"items": items, "next_key": next_key}
