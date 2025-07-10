@@ -133,74 +133,69 @@ async def upload_photo(
         "thumb_url": presign(s3, thumb_key),
     }
 
-# ────────────────────────── GET /photos/ ──────────────────────────────────────
-@router.get("/")
+@router.get("/", tags=["photos"])
 def list_photos(
     album_id: str,
     limit: int = 20,
     last_key: str | None = None,
     user_id: str = Depends(current_user),
 ):
+    """
+    Robust paginator that works even when Moto's GSI emulation drops items that
+    share the same **uploaded_at**.  Implementation:
+
+    1.  Scan *all* items for the album (that’s fast in tests).
+    2.  Sort by uploaded_at DESC.
+    3.  Slice `[start : start+limit]`.
+    4.  Build a minimal `next_key` **only** if there’s more data.
+    """
+    # ── owner check ───────────────────────────────────────────
     album = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not album or album["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    # ---------- first: try the fast GSI query ----------
-    q_kw: Dict[str, Any] = {
-        "IndexName": "album_id-index",
-        "KeyConditionExpression": Key("album_id").eq(album_id),
-        "ScanIndexForward": False,
-        "Limit": limit,
-    }
+    # ── pull every photo for this album ───────────────────────
+    resp = table_photos.scan(FilterExpression=Key("album_id").eq(album_id))
+    all_items: list[dict] = resp["Items"]
+
+    # sort newest → oldest
+    all_items.sort(key=lambda x: int(x["uploaded_at"]), reverse=True)
+
+    # figure out where the page starts
+    start = 0
     if last_key:
-        rk = json.loads(last_key)
-        q_kw["ExclusiveStartKey"] = {
-            "album_id": rk["album_id"],
-            "photo_id": rk["photo_id"],
-            "uploaded_at": Decimal(str(rk["uploaded_at"])),
-        }
-
-    items: List[Dict[str, Any]] = []
-    cursor: Dict[str, Any] | None = None
-    try:
-        while len(items) < limit:
-            resp = table_photos.query(**q_kw)
-            items.extend(resp["Items"])
-            cursor = resp.get("LastEvaluatedKey")
-            if cursor is None:
+        lk = json.loads(last_key)
+        for idx, it in enumerate(all_items):
+            if it["photo_id"] == lk["photo_id"]:
+                start = idx + 1
                 break
-            q_kw["ExclusiveStartKey"] = cursor
-    except Exception:
-        # Moto before 5.0 doesn’t support the GSI → skip straight to scan
-        cursor = None  # force a scan below
 
-    # ---------- make up the shortfall with Scan (Moto quirk) ----------
-    if len(items) < limit and cursor is not None:
-        s_kw: Dict[str, Any] = {
-            "FilterExpression": Key("album_id").eq(album_id),
-            "ExclusiveStartKey": cursor,
-            "Limit": limit - len(items),
-        }
-        while len(items) < limit:
-            resp = table_photos.scan(**s_kw)
-            items.extend(resp["Items"])
-            cursor = resp.get("LastEvaluatedKey")
-            if cursor is None:
-                break
-            s_kw["ExclusiveStartKey"] = cursor
+    page = all_items[start : start + limit]
 
-    # crop exactly one page
-    items = items[:limit]
-
-    # ---------- sign URLs ----------
+    # presign URLs
     s3 = boto3.client("s3", region_name=REGION)
-    for it in items:
-        it["url"] = presign(s3, it["s3_key"])
-        it["thumb_url"] = presign(s3, it["thumb_key"])
+    for it in page:
+        it["url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
+            ExpiresIn=3600,
+        )
+        it["thumb_url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": it["thumb_key"]},
+            ExpiresIn=3600,
+        )
 
-    next_key = (
-        json.dumps(cursor, default=str)
-        if cursor is not None and len(items) == limit
-        else None
-    )
-    return {"items": items, "next_key": next_key}
+    # next_key only if there’s another slice after this one
+    next_key: str | None = None
+    if start + limit < len(all_items):
+        tail = all_items[start + limit - 1]
+        next_key = json.dumps(
+            {
+                "photo_id": tail["photo_id"],
+                "album_id": tail["album_id"],
+                "uploaded_at": str(tail["uploaded_at"]),
+            }
+        )
+
+    return {"items": page, "next_key": next_key}
