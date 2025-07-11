@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +7,34 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Dependency directories
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+
+# Local env files
+.env
 *.local
 
-# Editor directories and files
-.vscode/*
+# IDE/editor folders
+.vscode/
 !.vscode/extensions.json
-.idea
+.idea/
+
+# macOS
 .DS_Store
+
+# Windows
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
+
+# Swap files
 *.sw?
+
+# Byte-compiled / cache
+__pycache__/
+*.pyc

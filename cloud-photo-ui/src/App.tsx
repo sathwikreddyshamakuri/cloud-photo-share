@@ -1,35 +1,55 @@
-import { useState } from 'react';
-import reactLogo from './assets/react.svg';
-import viteLogo from '/vite.svg';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import Login   from './pages/Login';
+import Albums  from './pages/Albums';
+import Album   from './pages/Album';
+>>>>>>> 2aae70b (chore: clean up gitignore and commit real source changes)
 
+/* ------ Header with Logout -------------------------------------------- */
+function Header() {
+  const navigate = useNavigate();
 
-function App() {
-  const [count, setCount] = useState(0);
+  const handleLogout = () => {
+    localStorage.removeItem('jwt');
+    navigate('/login');
+  };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-slate-900">
-      <header className="space-y-6 text-center">
-        <div className="flex justify-center gap-8">
-          <a href="https://vite.dev" target="_blank">
-            <img src={viteLogo} className="w-24 hover:rotate-12 transition" />
-          </a>
-          <a href="https://react.dev" target="_blank">
-            <img src={reactLogo} className="w-24 animate-spin-slow" />
-          </a>
-        </div>
+    <header className="flex justify-end bg-white p-4 shadow">
+      <button
+        onClick={handleLogout}
+        className="rounded bg-red-500 px-3 py-1 font-medium text-white hover:bg-red-400"
+      >
+        Logout
+      </button>
+    </header>
+  );
+}
 
-        <h1 className="text-4xl font-bold text-emerald-400">
-          Vite + React + Tailwind
-        </h1>
+/* ------ Main App ------------------------------------------------------- */
+function App() {
+  const hasToken = !!localStorage.getItem('jwt');
 
-        <button
-          className="rounded bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-500"
-          onClick={() => setCount(c => c + 1)}
-        >
-          Count is&nbsp;{count}
-        </button>
-      </header>
-    </div>
+  return (
+    <BrowserRouter>
+      {/* Show the header only when signed in */}
+      {hasToken && <Header />}
+
+      <Routes>
+        <Route
+          path="/"
+          element={
+            hasToken ? <Navigate to="/albums" replace /> : <Navigate to="/login" replace />
+          }
+        />
+
+        <Route path="/login"     element={<Login  />} />
+        <Route path="/albums"    element={<Albums />} />
+        <Route path="/album/:id" element={<Album  />} />
+
+        {/* Optional catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
