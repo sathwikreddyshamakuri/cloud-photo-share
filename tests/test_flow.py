@@ -37,7 +37,7 @@ def test_full_flow():
                     headers=headers, files=files)
     assert r.status_code == 201, r.text
     resp = r.json()
-    assert resp.get("thumb_url", "").startswith("https://")
+    assert resp.get("url", "").startswith("https://")
 
     #upload 14 more images
     for _ in range(14):
