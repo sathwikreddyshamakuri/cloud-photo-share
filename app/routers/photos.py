@@ -4,7 +4,7 @@ from fastapi import (
     APIRouter,
     UploadFile,
     File,
-    Form,
+    Query,
     HTTPException,
     Depends,
     status,
@@ -24,7 +24,7 @@ table_photos = dyna.Table("PhotoMeta")
 
 @router.post("/photos/", status_code=status.HTTP_201_CREATED)
 def upload_photo(
-    album_id: str = Form(...),
+    album_id: str = Query(..., description="Album ID to upload into"),
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
