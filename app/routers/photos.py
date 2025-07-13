@@ -70,29 +70,44 @@ def list_photos(
     if not alb or alb["owner"] != user_id:
         raise HTTPException(status_code=404, detail="Album not found")
 
-    # 2) Scan DynamoDB with a filter on album_id, apply pagination
-    scan_kwargs = {
-        "FilterExpression": Attr("album_id").eq(album_id),
-        "Limit": limit,
-    }
+    # 2) Scan ALL items from PhotoMeta
+    items = []
+    resp = table_photos.scan()
+    items.extend(resp.get("Items", []))
+    while "LastEvaluatedKey" in resp:
+        resp = table_photos.scan(ExclusiveStartKey=resp["LastEvaluatedKey"])
+        items.extend(resp.get("Items", []))
+
+    # 3) Filter to this album and sort by upload time
+    photos = [it for it in items if it.get("album_id") == album_id]
+    photos.sort(key=lambda it: it["uploaded_at"])
+
+    # 4) Determine start index based on last_key
+    start_index = 0
     if last_key:
-        scan_kwargs["ExclusiveStartKey"] = {"photo_id": last_key}
+        for idx, it in enumerate(photos):
+            if it["photo_id"] == last_key:
+                start_index = idx + 1
+                break
 
-    resp = table_photos.scan(**scan_kwargs)
-    items = resp.get("Items", [])
+    # 5) Slice the page
+    page_items = photos[start_index : start_index + limit]
 
-    # 3) Attach presigned URL to each item
-    for it in items:
+    # 6) Attach presigned URLs
+    for it in page_items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
             ExpiresIn=3600,
         )
 
-    # 4) Determine next_key if more items remain
-    next_key = resp.get("LastEvaluatedKey", {}).get("photo_id")
+    # 7) Compute next_key
+    if start_index + limit < len(photos):
+        next_key = page_items[-1]["photo_id"]
+    else:
+        next_key = None
 
-    return {"items": items, "next_key": next_key}
+    return {"items": page_items, "next_key": next_key}
 
 
 @router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
