@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
-import Login   from './pages/Login';
-import Albums  from './pages/Albums';
-import Album   from './pages/Album';
->>>>>>> 2aae70b (chore: clean up gitignore and commit real source changes)
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import Login from './pages/Login';
+import Albums from './pages/Albums';
+import Album from './pages/Album';
 
 /* ------ Header with Logout -------------------------------------------- */
 function Header() {
@@ -42,9 +42,9 @@ function App() {
           }
         />
 
-        <Route path="/login"     element={<Login  />} />
-        <Route path="/albums"    element={<Albums />} />
-        <Route path="/album/:id" element={<Album  />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/albums" element={<Albums />} />
+        <Route path="/album/:id" element={<Album />} />
 
         {/* Optional catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />

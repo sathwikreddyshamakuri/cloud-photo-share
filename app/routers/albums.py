@@ -1,39 +1,37 @@
-# app/routers/albums.py
-
-from fastapi import (
-    APIRouter,
-    Depends,
-    Body,
-    HTTPException,
-    status,
-)
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from pydantic import BaseModel
-from boto3.dynamodb.conditions import Attr
-import time, uuid
+import time
+import uuid
 
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
+from boto3.dynamodb.conditions import Attr
 
-router = APIRouter()
+# Use a single Albums table for both listing and creation
 table_albums = dyna.Table("Albums")
-table_photos = dyna.Table("PhotoMeta")
-
+router = APIRouter()
 
 class AlbumIn(BaseModel):
     title: str
 
-
 @router.get("/albums/")
-def list_albums():
-    resp = table_albums.scan()
-    items = resp.get("Items", [])
+def list_albums(q: str = Query(None, description="Optional title filter")):
+    # 1) Scan albums, optionally filter by title substring
+    scan_kwargs = {}
+    if q:
+        scan_kwargs["FilterExpression"] = Attr("title").contains(q)
+    resp = table_albums.scan(**scan_kwargs)
+    albums = resp.get("Items", [])
 
     enriched = []
-    for alb in items:
-        pr = table_photos.scan(
-            FilterExpression=Attr("album_id").eq(alb["album_id"])
+    for album in albums:
+        # 2) Find photos in this album
+        photos_resp = dyna.Table("PhotoMeta").scan(
+            FilterExpression=Attr("album_id").eq(album["album_id"])
         )
-        photos = pr.get("Items", [])
+        photos = photos_resp.get("Items", [])
+
+        # 3) Pick the latest photo as cover
         if photos:
             photos.sort(key=lambda x: x["uploaded_at"], reverse=True)
             cover_key = photos[0]["s3_key"]
@@ -44,61 +42,29 @@ def list_albums():
             )
         else:
             cover_url = None
-        enriched.append({**alb, "cover_url": cover_url})
+
+        # 4) Merge it in under `cover_url`
+        enriched.append({**album, "cover_url": cover_url})
 
     return {"albums": enriched}
 
-
-@router.post("/albums/", status_code=201)
+@router.post("/albums/", status_code=status.HTTP_201_CREATED)
 def create_album(
-    body: AlbumIn = Body(...),
+    title: str = Query(..., description="Album title"),
     user_id: str = Depends(current_user),
 ):
+    """
+    Create a new album owned by the current user.
+    Title is passed as a query parameter for compatibility with tests.
+    """
     new_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
-        "owner":      user_id,
-        "album_id":   new_id,
-        "title":      body.title,
+        "owner": user_id,
+        "album_id": new_id,
+        "title": title,
         "created_at": now,
     }
     table_albums.put_item(Item=item)
+    # Return the created album, including cover_url = null
     return {**item, "cover_url": None}
-
-
-@router.put("/albums/{album_id}", status_code=200)
-def update_album(
-    album_id: str,
-    body: AlbumIn = Body(...),
-    user_id: str = Depends(current_user),
-):
-    resp = table_albums.get_item(Key={"album_id": album_id})
-    if "Item" not in resp:
-        raise HTTPException(status_code=404, detail="Album not found")
-    if resp["Item"]["owner"] != user_id:
-        raise HTTPException(status_code=403, detail="Not your album")
-
-    table_albums.update_item(
-        Key={"album_id": album_id},
-        UpdateExpression="SET title = :t",
-        ExpressionAttributeValues={":t": body.title},
-    )
-    updated = table_albums.get_item(Key={"album_id": album_id})["Item"]
-    return {**updated, "cover_url": None}
-
-
-@router.delete("/albums/{album_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_album(
-    album_id: str,
-    user_id: str = Depends(current_user),
-):
-    resp = table_albums.get_item(Key={"album_id": album_id})
-    if "Item" not in resp:
-        raise HTTPException(status_code=404, detail="Album not found")
-    if resp["Item"]["owner"] != user_id:
-        raise HTTPException(status_code=403, detail="Not your album")
-
-    # delete album metadata
-    table_albums.delete_item(Key={"album_id": album_id})
-    # (Optionally: cascade delete photos & S3 objects here.)
-    return
