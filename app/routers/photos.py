@@ -42,9 +42,9 @@ def upload_photo(
     photo_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
-        "photo_id":   photo_id,
-        "album_id":   album_id,
-        "s3_key":     s3_key,
+        "photo_id":    photo_id,
+        "album_id":    album_id,
+        "s3_key":      s3_key,
         "uploaded_at": now,
     }
     table_photos.put_item(Item=item)
@@ -59,17 +59,40 @@ def upload_photo(
 
 
 @router.get("/photos/")
-def list_photos():
-    resp = table_photos.scan()
+def list_photos(
+    album_id: str = Query(..., description="Album ID to filter by"),
+    limit: int = Query(10, gt=0, description="Max number of photos to return"),
+    last_key: str | None = Query(None, description="Photo ID to continue from"),
+    user_id: str = Depends(current_user),
+):
+    # 1) Verify album exists & is owned by this user
+    alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
+    if not alb or alb["owner"] != user_id:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    # 2) Build scan parameters for pagination
+    scan_kwargs: dict = {
+        "FilterExpression": Attr("album_id").eq(album_id),
+        "Limit": limit,
+    }
+    if last_key:
+        scan_kwargs["ExclusiveStartKey"] = {"photo_id": last_key}
+
+    resp = table_photos.scan(**scan_kwargs)
+
+    # 3) Attach presigned URL to each item
     items = resp.get("Items", [])
-    # Attach presigned URL
     for it in items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
             ExpiresIn=3600,
         )
-    return {"items": items}
+
+    # 4) Determine next_key if more items remain
+    next_key = resp.get("LastEvaluatedKey", {}).get("photo_id")
+
+    return {"items": items, "next_key": next_key}
 
 
 @router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
