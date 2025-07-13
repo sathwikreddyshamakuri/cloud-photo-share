@@ -70,29 +70,40 @@ def list_photos(
     if not alb or alb["owner"] != user_id:
         raise HTTPException(status_code=404, detail="Album not found")
 
-    # 2) Build scan parameters for pagination
-    scan_kwargs: dict = {
-        "FilterExpression": Attr("album_id").eq(album_id),
-        "Limit": limit,
-    }
+    # 2) Pull all photos for this album
+    resp = table_photos.scan()
+    all_items = resp.get("Items", [])
+    photos = [it for it in all_items if it["album_id"] == album_id]
+
+    # 3) Sort by upload time so pagination is consistent
+    photos.sort(key=lambda it: it["uploaded_at"])
+
+    # 4) Locate start position
+    start_index = 0
     if last_key:
-        scan_kwargs["ExclusiveStartKey"] = {"photo_id": last_key}
+        for idx, it in enumerate(photos):
+            if it["photo_id"] == last_key:
+                start_index = idx + 1
+                break
 
-    resp = table_photos.scan(**scan_kwargs)
+    # 5) Slice out the current page
+    page_items = photos[start_index : start_index + limit]
 
-    # 3) Attach presigned URL to each item
-    items = resp.get("Items", [])
-    for it in items:
+    # 6) Attach presigned URL to each item
+    for it in page_items:
         it["url"] = s3.generate_presigned_url(
             "get_object",
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
             ExpiresIn=3600,
         )
 
-    # 4) Determine next_key if more items remain
-    next_key = resp.get("LastEvaluatedKey", {}).get("photo_id")
+    # 7) Compute next_key if more remain
+    if start_index + limit < len(photos):
+        next_key = page_items[-1]["photo_id"]
+    else:
+        next_key = None
 
-    return {"items": items, "next_key": next_key}
+    return {"items": page_items, "next_key": next_key}
 
 
 @router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
