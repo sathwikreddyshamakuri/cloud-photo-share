@@ -1,6 +1,5 @@
 # app/routers/photos.py
 
-import logging
 from fastapi import (
     APIRouter,
     UploadFile,
@@ -17,7 +16,6 @@ import time
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 table_albums = dyna.Table("Albums")
@@ -30,12 +28,17 @@ def upload_photo(
     file: UploadFile = File(...),
     user_id: str = Depends(current_user),
 ):
-    # ... your existing upload logic ...
-    # unchanged
+    # 1) Verify album exists & is owned by this user
+    alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
+    if not alb or alb["owner"] != user_id:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    # 2) Upload file to S3 under a unique key
     ext = file.filename.split(".")[-1]
     s3_key = f"{album_id}/{uuid.uuid4()}.{ext}"
     s3.upload_fileobj(file.file, S3_BUCKET, s3_key)
 
+    # 3) Record metadata in DynamoDB
     photo_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
@@ -46,6 +49,7 @@ def upload_photo(
     }
     table_photos.put_item(Item=item)
 
+    # 4) Generate presigned URL and return it
     url = s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": S3_BUCKET, "Key": s3_key},
@@ -61,53 +65,34 @@ def list_photos(
     last_key: str | None = Query(None, description="Photo ID to continue from"),
     user_id: str = Depends(current_user),
 ):
-    try:
-        # 1) Verify album exists & is owned by this user
-        alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
-        if not alb or alb["owner"] != user_id:
-            raise HTTPException(status_code=404, detail="Album not found")
+    # 1) Verify album exists & is owned by this user
+    alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
+    if not alb or alb["owner"] != user_id:
+        raise HTTPException(status_code=404, detail="Album not found")
 
-        # 2) Pull all photos for this album
-        resp = table_photos.scan()
-        photos = [it for it in resp.get("Items", []) if it["album_id"] == album_id]
+    # 2) Scan DynamoDB with a filter on album_id, apply pagination
+    scan_kwargs = {
+        "FilterExpression": Attr("album_id").eq(album_id),
+        "Limit": limit,
+    }
+    if last_key:
+        scan_kwargs["ExclusiveStartKey"] = {"photo_id": last_key}
 
-        # 3) Sort by upload time so pagination is consistent
-        photos.sort(key=lambda it: it["uploaded_at"])
+    resp = table_photos.scan(**scan_kwargs)
+    items = resp.get("Items", [])
 
-        # 4) Locate start position
-        start_index = 0
-        if last_key:
-            for idx, it in enumerate(photos):
-                if it["photo_id"] == last_key:
-                    start_index = idx + 1
-                    break
+    # 3) Attach presigned URL to each item
+    for it in items:
+        it["url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
+            ExpiresIn=3600,
+        )
 
-        # 5) Slice out the current page
-        page_items = photos[start_index : start_index + limit]
+    # 4) Determine next_key if more items remain
+    next_key = resp.get("LastEvaluatedKey", {}).get("photo_id")
 
-        # 6) Attach presigned URL to each item
-        for it in page_items:
-            try:
-                it["url"] = s3.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
-                    ExpiresIn=3600,
-                )
-            except Exception as e:
-                logger.exception("Failed to generate presigned URL for %s", it["photo_id"])
-                it["url"] = None
-
-        # 7) Compute next_key if more remain
-        next_key = page_items[-1]["photo_id"] if (start_index + limit) < len(photos) else None
-
-        return {"items": page_items, "next_key": next_key}
-
-    except HTTPException:
-        # re-raise 404s
-        raise
-    except Exception as e:
-        logger.exception("Error in list_photos")
-        raise HTTPException(status_code=500, detail="Unable to list photos")
+    return {"items": items, "next_key": next_key}
 
 
 @router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -115,17 +100,24 @@ def delete_photo(
     photo_id: str,
     user_id: str = Depends(current_user),
 ):
-    # ... your existing delete logic ...
+    """
+    Delete a photo by its ID, ensuring the current user owns the album.
+    """
+    # 1) Fetch the photo metadata
     resp = table_photos.get_item(Key={"photo_id": photo_id})
     if "Item" not in resp:
         raise HTTPException(status_code=404, detail="Photo not found")
     photo = resp["Item"]
 
+    # 2) Verify ownership via the album
     alb = table_albums.get_item(Key={"album_id": photo["album_id"]}).get("Item")
     if not alb or alb["owner"] != user_id:
         raise HTTPException(status_code=403, detail="Not your photo")
 
+    # 3) Delete from DynamoDB
     table_photos.delete_item(Key={"photo_id": photo_id})
+
+    # 4) Delete the object from S3
     try:
         s3.delete_object(Bucket=S3_BUCKET, Key=photo["s3_key"])
     except Exception:
