@@ -69,7 +69,7 @@ def list_photos():
             Params={"Bucket": S3_BUCKET, "Key": it["s3_key"]},
             ExpiresIn=3600,
         )
-    return {"photos": items}
+    return {"items": items}
 
 
 @router.delete("/photos/{photo_id}", status_code=status.HTTP_204_NO_CONTENT)
