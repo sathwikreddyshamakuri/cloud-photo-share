@@ -1,5 +1,7 @@
-import { useEffect, useState, ChangeEvent, FormEvent } from 'react';
-import { useParams, Link } from 'react-router-dom';
+// File: src/pages/Album.tsx
+
+import React, { useEffect, useState, ChangeEvent, FormEvent } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
 interface PhotoMeta {
@@ -10,70 +12,89 @@ interface PhotoMeta {
   url: string;
 }
 
-export default function Album() {
+export default function AlbumPage() {
   const { id: albumId } = useParams<{ id: string }>();
-  const [photos, setPhotos]     = useState<PhotoMeta[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [isOpen, setIsOpen]     = useState(false);
-  const [index, setIndex]       = useState(0);
-
-  // Upload state
-  const [file, setFile]         = useState<File | null>(null);
+  const navigate = useNavigate();
+  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress]   = useState(0);
-
-  // Fetch photos
-  const fetchPhotos = () => {
-    setLoading(true);
-    api.get('/photos/')
-      .then(res => {
-        const all = (res.data as any).photos as PhotoMeta[];
-        setPhotos(all.filter(p => p.album_id === albumId));
-      })
-      .catch(() => setError('Failed to load photos'))
-      .finally(() => setLoading(false));
-  };
+  const [progress, setProgress] = useState(0);
+  const [isOpen, setIsOpen] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   useEffect(() => {
     fetchPhotos();
   }, [albumId]);
 
-  // File selection
+  async function fetchPhotos() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<{ items: PhotoMeta[] }>('/photos/', {
+        params: { album_id: albumId, limit: 100 },
+      });
+      setPhotos(res.data.items);
+    } catch (e: any) {
+      console.error('Failed to load photos', e);
+      if (e.response?.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      } else {
+        setError('Failed to load photos');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const onSelect = (e: ChangeEvent<HTMLInputElement>) => {
     setFile(e.target.files?.[0] ?? null);
   };
 
-  // Upload handler
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) return;
-
     const data = new FormData();
-    data.append('album_id', albumId!);
     data.append('file', file);
 
     setUploading(true);
     setProgress(0);
-
     try {
       await api.post('/photos/', data, {
+        params: { album_id: albumId },
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: ev => {
-          setProgress(Math.round((ev.loaded / ev.total!) * 100));
-        },
+        onUploadProgress: ev => setProgress(Math.round((ev.loaded / ev.total!) * 100)),
       });
       setFile(null);
       fetchPhotos();
-    } catch {
+    } catch (e) {
+      console.error('Upload failed', e);
       alert('Upload failed');
     } finally {
       setUploading(false);
     }
   };
 
+  const deletePhoto = async (photo_id: string) => {
+    if (!confirm('Delete this photo?')) return;
+    try {
+      await api.delete(`/photos/${photo_id}`);
+      // Refresh list from server to ensure pagination consistency
+      fetchPhotos();
+    } catch (e: any) {
+      console.error('Delete photo error:', e);
+      alert(e.response?.data?.detail || 'Delete failed');
+      if (e.response?.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login');
+      }
+    }
+  };
+
   if (loading) return <p className="p-8">Loading photos…</p>;
-  if (error)   return <p className="p-8 text-red-600">{error}</p>;
+  if (error) return <p className="p-8 text-red-600">{error}</p>;
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
@@ -84,11 +105,7 @@ export default function Album() {
 
       {/* Upload form */}
       <form onSubmit={onUpload} className="my-4 flex items-center space-x-2">
-        <input
-          type="file"
-          onChange={onSelect}
-          className="rounded border p-1"
-        />
+        <input type="file" onChange={onSelect} className="rounded border p-1" />
         <button
           type="submit"
           disabled={!file || uploading}
@@ -96,9 +113,7 @@ export default function Album() {
         >
           {uploading ? 'Uploading…' : 'Upload'}
         </button>
-        {uploading && (
-          <span className="ml-4">{progress}%</span>
-        )}
+        {uploading && <span className="ml-4">{progress}%</span>}
       </form>
 
       {/* Photo grid */}
@@ -108,24 +123,15 @@ export default function Album() {
             <img
               src={photo.url}
               alt={`Photo ${i + 1}`}
-              className="h-48 w-full object-cover cursor-pointer rounded-lg shadow"
+              className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
               onClick={() => {
-                setIndex(i);
+                setCurrentIndex(i);
                 setIsOpen(true);
               }}
             />
-            {/* 🗑️ delete button */}
             <button
-              onClick={async () => {
-                if (!confirm('Delete this photo?')) return;
-                try {
-                  await api.delete(`/photos/${photo.photo_id}`);
-                  setPhotos(photos.filter(p => p.photo_id !== photo.photo_id));
-                } catch {
-                  alert('Delete failed');
-                }
-              }}
-              className="absolute top-1 right-1 rounded bg-white p-1 text-red-600 hover:bg-red-100"
+              onClick={() => deletePhoto(photo.photo_id)}
+              className="absolute top-1 right-1 bg-white p-1 rounded text-red-600 hover:bg-red-100"
             >
               🗑️
             </button>
@@ -140,8 +146,8 @@ export default function Album() {
           onClick={() => setIsOpen(false)}
         >
           <img
-            src={photos[index].url}
-            alt={`Photo ${index + 1}`}
+            src={photos[currentIndex].url}
+            alt={`Photo ${currentIndex + 1}`}
             className="max-h-full max-w-full rounded-lg shadow-lg"
           />
         </div>

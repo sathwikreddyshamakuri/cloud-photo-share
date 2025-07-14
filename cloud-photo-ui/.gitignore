@@ -1,3 +1,11 @@
+# Python bytecode
+__pycache__/
+*.pyc
+
+# FastAPI / Python
+.env
+.venv/
+
 # Logs
 logs/
 *.log

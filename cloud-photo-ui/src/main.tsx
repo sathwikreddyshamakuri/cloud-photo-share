@@ -1,4 +1,3 @@
-import 'react-image-lightbox/style.css';
 import './index.css';
 
 import { StrictMode } from 'react';
