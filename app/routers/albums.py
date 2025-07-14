@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+# app/routers/albums.py
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from boto3.dynamodb.conditions import Key
 import time, uuid
@@ -11,12 +13,10 @@ router = APIRouter()
 table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
 
-# Pydantic models
-class AlbumCreate(BaseModel):
-    title: str
 
 class AlbumUpdate(BaseModel):
     title: str
+
 
 class AlbumOut(BaseModel):
     album_id: str
@@ -26,20 +26,24 @@ class AlbumOut(BaseModel):
     cover_url: str | None = None
 
 
-@router.post("/albums/", response_model=AlbumOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/albums/",
+    response_model=AlbumOut,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_album(
-    body: AlbumCreate,
+    title: str = Query(..., description="Title of the new album"),
     user_id: str = Depends(current_user),
 ):
     """
-    Create a new album. Expects JSON body: { "title": "..." }.
+    Create a new album by passing ?title=… in the query string.
     """
     album_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
         "album_id": album_id,
         "owner": user_id,
-        "title": body.title,
+        "title": title,
         "created_at": now,
         "cover_url": None,
     }
@@ -50,15 +54,15 @@ def create_album(
 @router.get("/albums/", response_model=list[AlbumOut])
 def list_albums(user_id: str = Depends(current_user)):
     """
-    List all albums for the current user.
+    List all albums for the current user, with an optional cover_url.
     """
     resp = table_albums.scan(FilterExpression=Key("owner").eq(user_id))
     items = resp.get("Items", [])
-    # Compute a cover_url from the first photo in each album
     for alb in items:
-        photos = table_photos.scan(
+        photo_resp = table_photos.scan(
             FilterExpression=Key("album_id").eq(alb["album_id"])
-        ).get("Items", [])
+        )
+        photos = photo_resp.get("Items", [])
         if photos:
             photos.sort(key=lambda x: x.get("uploaded_at", 0))
             s3_key = photos[0].get("s3_key")
@@ -68,6 +72,8 @@ def list_albums(user_id: str = Depends(current_user)):
                     Params={"Bucket": S3_BUCKET, "Key": s3_key},
                     ExpiresIn=3600,
                 )
+        else:
+            alb["cover_url"] = None
     return items
 
 
@@ -83,14 +89,16 @@ def rename_album(
     resp = table_albums.get_item(Key={"album_id": album_id})
     item = resp.get("Item")
     if not item or item["owner"] != user_id:
-        raise HTTPException(status_code=404, detail="Album not found or unauthorized")
+        raise HTTPException(
+            status_code=404, detail="Album not found or unauthorized"
+        )
+
     table_albums.update_item(
         Key={"album_id": album_id},
         UpdateExpression="SET title = :t",
         ExpressionAttributeValues={":t": body.title},
     )
     item["title"] = body.title
-    # Optionally regenerate cover_url here if desired
     return item
 
 
@@ -100,18 +108,21 @@ def delete_album(
     user_id: str = Depends(current_user),
 ):
     """
-    Delete an album and cascade-delete its photos.
+    Delete an album and all its photo metadata.
     """
     resp = table_albums.get_item(Key={"album_id": album_id})
     item = resp.get("Item")
     if not item or item["owner"] != user_id:
-        raise HTTPException(status_code=404, detail="Album not found or unauthorized")
-    # Delete album record
+        raise HTTPException(
+            status_code=404, detail="Album not found or unauthorized"
+        )
+
+    # Delete the album record
     table_albums.delete_item(Key={"album_id": album_id})
-    # Cascade delete photo metadata
-    photos = table_photos.scan(
+
+    # Cascade-delete any photos in this album
+    photo_resp = table_photos.scan(
         FilterExpression=Key("album_id").eq(album_id)
-    ).get("Items", [])
-    for p in photos:
-        table_photos.delete_item(Key={"photo_id": p["photo_id"]})
-    return
+    )
+    for photo in photo_resp.get("Items", []):
+        table_photos.delete_item(Key={"photo_id": photo["photo_id"]})
