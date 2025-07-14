@@ -1,56 +1,26 @@
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useNavigate } from 'react-router-dom';
-import Login from './pages/Login';
-import Albums from './pages/Albums';
-import Album from './pages/Album';
+import LoginPage from './pages/LoginPage';
+import AlbumsPage from './pages/Albums';
+import AlbumPage from './pages/Album';
 
-/* ------ Header with Logout -------------------------------------------- */
-function Header() {
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    localStorage.removeItem('jwt');
-    navigate('/login');
-  };
-
-  return (
-    <header className="flex justify-end bg-white p-4 shadow">
-      <button
-        onClick={handleLogout}
-        className="rounded bg-red-500 px-3 py-1 font-medium text-white hover:bg-red-400"
-      >
-        Logout
-      </button>
-    </header>
-  );
-}
-
-/* ------ Main App ------------------------------------------------------- */
-function App() {
-  const hasToken = !!localStorage.getItem('jwt');
+export default function App() {
+  const token = localStorage.getItem('token');
 
   return (
     <BrowserRouter>
-      {/* Show the header only when signed in */}
-      {hasToken && <Header />}
-
       <Routes>
-        <Route
-          path="/"
-          element={
-            hasToken ? <Navigate to="/albums" replace /> : <Navigate to="/login" replace />
-          }
-        />
+        <Route path="/login"
+          element={token ? <Navigate to="/albums" replace /> : <LoginPage />} />
 
-        <Route path="/login" element={<Login />} />
-        <Route path="/albums" element={<Albums />} />
-        <Route path="/album/:id" element={<Album />} />
+        <Route path="/albums"
+          element={token ? <AlbumsPage /> : <Navigate to="/login" replace />} />
 
-        {/* Optional catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/albums/:id"
+          element={token ? <AlbumPage /> : <Navigate to="/login" replace />} />
+
+        <Route path="*" element={<Navigate to={token ? "/albums" : "/login"} replace />} />
       </Routes>
     </BrowserRouter>
   );
 }
-
-export default App;

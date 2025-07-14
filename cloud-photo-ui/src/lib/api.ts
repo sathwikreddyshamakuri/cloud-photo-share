@@ -1,15 +1,15 @@
 import axios from 'axios';
 
-// Point to local FastAPI in dev; override with VITE_API_URL in prod
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000',
+  baseURL: 'http://localhost:8001', // or :8000 if that's where your backend runs
 });
 
-// Inject JWT on every request if present
-api.interceptors.request.use(cfg => {
-  const token = localStorage.getItem('jwt');
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export default api;
