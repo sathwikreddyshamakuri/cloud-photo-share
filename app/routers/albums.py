@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+# app/routers/albums.py
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from boto3.dynamodb.conditions import Key
 import time, uuid
@@ -12,20 +14,16 @@ table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
 
 
-class AlbumCreate(BaseModel):
-    title: str
-
-
 class AlbumUpdate(BaseModel):
     title: str
 
 
 class AlbumOut(BaseModel):
-    album_id: str
-    owner: str
-    title: str
+    album_id:   str
+    owner:      str
+    title:      str
     created_at: int
-    cover_url: str | None = None
+    cover_url:  str | None = None
 
 
 @router.post(
@@ -34,20 +32,20 @@ class AlbumOut(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 def create_album(
-    body: AlbumCreate,
+    title: str = Query(..., description="Title of the new album"),
     user_id: str = Depends(current_user),
 ):
     """
-    Create a new album. Expects JSON body: { "title": "..." }.
+    Create a new album by passing ?title=… in the query string.
     """
     album_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
-        "album_id": album_id,
-        "owner": user_id,
-        "title": body.title,
+        "album_id":   album_id,
+        "owner":      user_id,
+        "title":      title,
         "created_at": now,
-        "cover_url": None,
+        "cover_url":  None,
     }
     table_albums.put_item(Item=item)
     return item
@@ -60,11 +58,11 @@ def list_albums(user_id: str = Depends(current_user)):
     """
     resp = table_albums.scan(FilterExpression=Key("owner").eq(user_id))
     items = resp.get("Items", [])
+    # For each album, pick its first photo (if any) as a cover
     for alb in items:
-        photo_resp = table_photos.scan(
+        photos = table_photos.scan(
             FilterExpression=Key("album_id").eq(alb["album_id"])
-        )
-        photos = photo_resp.get("Items", [])
+        ).get("Items", [])
         if photos:
             photos.sort(key=lambda x: x.get("uploaded_at", 0))
             s3_key = photos[0].get("s3_key")
@@ -94,7 +92,6 @@ def rename_album(
         raise HTTPException(
             status_code=404, detail="Album not found or unauthorized"
         )
-
     table_albums.update_item(
         Key={"album_id": album_id},
         UpdateExpression="SET title = :t",
@@ -119,12 +116,13 @@ def delete_album(
             status_code=404, detail="Album not found or unauthorized"
         )
 
-    # Delete the album record
+    # 1) Delete the album record
     table_albums.delete_item(Key={"album_id": album_id})
 
-    # Cascade-delete any photos in this album
+    # 2) Cascade-delete any photos in this album
     photo_resp = table_photos.scan(
         FilterExpression=Key("album_id").eq(album_id)
     )
     for photo in photo_resp.get("Items", []):
         table_photos.delete_item(Key={"photo_id": photo["photo_id"]})
+    return
