@@ -1,15 +1,16 @@
+// cloud-photo-ui/src/lib/api.ts
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8001', // or :8000 if that's where your backend runs
+  baseURL: import.meta.env.VITE_API_URL,    // must match the env key above
+  headers: { 'Content-Type': 'application/json' },
 });
 
-api.interceptors.request.use(config => {
+// send JWT on each request
+api.interceptors.request.use(cfg => {
   const token = localStorage.getItem('token');
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
+  if (token) cfg.headers!['Authorization'] = `Bearer ${token}`;
+  return cfg;
 });
 
 export default api;

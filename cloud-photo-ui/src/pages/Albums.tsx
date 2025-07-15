@@ -1,55 +1,55 @@
 // File: src/pages/Albums.tsx
-
-import { useState, useEffect } from 'react'
-import type { FormEvent } from 'react'
-import { Link } from 'react-router-dom'
-import api from '../lib/api'
+import { useState, useEffect } from 'react';
+import type { FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
 
 interface Album {
-  album_id: string
-  owner: string
-  title: string
-  created_at: number
-  cover_url?: string | null
+  album_id:   string;
+  owner:      string;
+  title:      string;
+  created_at: number;
+  cover_url?: string | null;
 }
 
 export default function AlbumsPage() {
-  const [albums, setAlbums] = useState<Album[]>([])
-  const [filtered, setFiltered] = useState<Album[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [newTitle, setNewTitle] = useState('')
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameTitle, setRenameTitle] = useState('')
+  const navigate = useNavigate();
+  const [albums, setAlbums]       = useState<Album[]>([]);
+  const [filtered, setFiltered]   = useState<Album[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [creating, setCreating]   = useState(false);
+  const [newTitle, setNewTitle]   = useState('');
+  const [renamingId, setRenamingId]   = useState<string | null>(null);
+  const [renameTitle, setRenameTitle] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
+    const token = localStorage.getItem('token');
     if (!token) {
-      window.location.href = '/login'
-      return
+      navigate('/login', { replace: true });
+      return;
     }
-    fetchAlbums()
-  }, [])
+    fetchAlbums();
+  }, [navigate]);
 
   async function fetchAlbums() {
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
     try {
-      const res = await api.get<Album[]>('/albums/')
-      setAlbums(res.data)
-      setFiltered(res.data)
+      const res = await api.get<Album[]>('/albums/');
+      setAlbums(res.data);
+      setFiltered(res.data);
     } catch (e: any) {
-      console.error('Failed to load albums', e)
+      console.error('Failed to load albums', e);
       if (e.response?.status === 401) {
-        localStorage.removeItem('token')
-        window.location.href = '/login'
-        return
+        localStorage.removeItem('token');
+        navigate('/login', { replace: true });
+        return;
       }
-      setError('Failed to load albums')
+      setError('Failed to load albums');
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
@@ -58,66 +58,64 @@ export default function AlbumsPage() {
       albums.filter(a =>
         a.title.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    )
-  }, [searchTerm, albums])
+    );
+  }, [searchTerm, albums]);
 
   function handleLogout() {
-    localStorage.removeItem('token')
-    window.location.href = '/login'
+    localStorage.removeItem('token');
+    navigate('/login', { replace: true });
   }
 
   async function handleCreate(e: FormEvent) {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      const res = await api.post<Album>('/albums/', { title: newTitle })
-      const updated = [res.data, ...albums]
-      setAlbums(updated)
-      setFiltered(updated)
-      setNewTitle('')
-      setCreating(false)
+      const res = await api.post<Album>('/albums/', { title: newTitle });
+      const updated = [res.data, ...albums];
+      setAlbums(updated);
+      setFiltered(updated);
+      setNewTitle('');
+      setCreating(false);
     } catch (e) {
-      console.error('Create failed', e)
-      alert('Could not create album')
+      console.error('Create failed', e);
+      alert('Could not create album');
     }
   }
 
   function startRename(alb: Album) {
-    setRenamingId(alb.album_id)
-    setRenameTitle(alb.title)
+    setRenamingId(alb.album_id);
+    setRenameTitle(alb.title);
   }
 
   async function handleRename(e: FormEvent) {
-    e.preventDefault()
-    if (!renamingId) return
+    e.preventDefault();
+    if (!renamingId) return;
     try {
-      await api.put<Album>(`/albums/${renamingId}`, { title: renameTitle })
-      const updated = albums.map(a =>
+      await api.put<Album>(`/albums/${renamingId}`, { title: renameTitle });
+      setAlbums(albums.map(a =>
         a.album_id === renamingId ? { ...a, title: renameTitle } : a
-      )
-      setAlbums(updated)
-      setFiltered(updated)
-      setRenamingId(null)
-    } catch (e) {
-      console.error('Rename failed', e)
-      alert('Rename failed')
+      ));
+      setFiltered(filtered.map(a =>
+        a.album_id === renamingId ? { ...a, title: renameTitle } : a
+      ));
+      setRenamingId(null);
+    } catch {
+      alert('Rename failed');
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Delete this album?')) return
+    if (!confirm('Delete this album?')) return;
     try {
-      await api.delete(`/albums/${id}`)
-      const updated = albums.filter(a => a.album_id !== id)
-      setAlbums(updated)
-      setFiltered(updated)
-    } catch (e) {
-      console.error('Delete failed', e)
-      alert('Delete failed')
+      await api.delete(`/albums/${id}`);
+      setAlbums(albums.filter(a => a.album_id !== id));
+      setFiltered(filtered.filter(a => a.album_id !== id));
+    } catch {
+      alert('Delete failed');
     }
   }
 
-  if (loading) return <p className="p-8">Loading albums…</p>
-  if (error)   return <p className="p-8 text-red-600">{error}</p>
+  if (loading) return <p className="p-8">Loading albums…</p>;
+  if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
@@ -140,7 +138,7 @@ export default function AlbumsPage() {
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search albums..."
+          placeholder="Search albums…"
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           className="rounded border p-2 w-full max-w-sm"
@@ -154,17 +152,16 @@ export default function AlbumsPage() {
             className="relative bg-white rounded shadow hover:shadow-lg transition"
           >
             <Link to={`/albums/${alb.album_id}`}>
-              {alb.cover_url ? (
-                <img
-                  src={alb.cover_url}
-                  alt={alb.title}
-                  className="h-48 w-full object-cover rounded-t"
-                />
-              ) : (
-                <div className="h-48 w-full bg-gray-200 flex items-center justify-center rounded-t">
-                  <span className="text-gray-500">No preview</span>
-                </div>
-              )}
+              {alb.cover_url
+                ? <img
+                    src={alb.cover_url}
+                    alt={alb.title}
+                    className="h-48 w-full object-cover rounded-t"
+                  />
+                : <div className="h-48 w-full bg-gray-200 flex items-center justify-center rounded-t">
+                    <span className="text-gray-500">No preview</span>
+                  </div>
+              }
               <div className="p-4">
                 <h2 className="text-lg font-medium">{alb.title}</h2>
               </div>
@@ -264,5 +261,5 @@ export default function AlbumsPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
