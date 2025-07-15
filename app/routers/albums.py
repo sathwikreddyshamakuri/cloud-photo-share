@@ -1,6 +1,4 @@
-# app/routers/albums.py
-
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from boto3.dynamodb.conditions import Key
 import time, uuid
@@ -12,6 +10,10 @@ router = APIRouter()
 
 table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
+
+
+class AlbumCreate(BaseModel):
+    title: str
 
 
 class AlbumUpdate(BaseModel):
@@ -32,18 +34,18 @@ class AlbumOut(BaseModel):
     status_code=status.HTTP_201_CREATED,
 )
 def create_album(
-    title: str = Query(..., description="Title of the new album"),
+    body: AlbumCreate,
     user_id: str = Depends(current_user),
 ):
     """
-    Create a new album by passing ?title=… in the query string.
+    Create a new album. Expects JSON body: { "title": "..." }.
     """
     album_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
         "album_id": album_id,
         "owner": user_id,
-        "title": title,
+        "title": body.title,
         "created_at": now,
         "cover_url": None,
     }
