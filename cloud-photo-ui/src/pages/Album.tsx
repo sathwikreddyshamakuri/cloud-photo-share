@@ -1,100 +1,107 @@
 // File: src/pages/Album.tsx
 
-import React, { useEffect, useState, ChangeEvent, FormEvent } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+import { useState, useEffect } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import api from '../lib/api'
 
 interface PhotoMeta {
-  photo_id: string;
-  album_id: string;
-  s3_key: string;
-  uploaded_at: number;
-  url: string;
+  photo_id: string
+  album_id: string
+  s3_key: string
+  uploaded_at: number
+  url: string
 }
 
 export default function AlbumPage() {
-  const { id: albumId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [isOpen, setIsOpen] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const { id: albumId } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const [photos, setPhotos] = useState<PhotoMeta[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [isOpen, setIsOpen] = useState(false)
+  const [currentIndex, setCurrentIndex] = useState(0)
 
   useEffect(() => {
-    fetchPhotos();
-  }, [albumId]);
+    const token = localStorage.getItem('token')
+    if (!token) {
+      navigate('/login')
+      return
+    }
+    fetchPhotos()
+  }, [albumId])
 
   async function fetchPhotos() {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
       const res = await api.get<{ items: PhotoMeta[] }>('/photos/', {
         params: { album_id: albumId, limit: 100 },
-      });
-      setPhotos(res.data.items);
+      })
+      setPhotos(res.data.items)
     } catch (e: any) {
-      console.error('Failed to load photos', e);
+      console.error('Failed to load photos', e)
       if (e.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
+        localStorage.removeItem('token')
+        navigate('/login')
       } else {
-        setError('Failed to load photos');
+        setError('Failed to load photos')
       }
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
   }
 
-  const onSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files?.[0] ?? null);
-  };
+  function onSelect(e: ChangeEvent<HTMLInputElement>) {
+    setFile(e.target.files?.[0] ?? null)
+  }
 
-  const onUpload = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
-    const data = new FormData();
-    data.append('file', file);
+  async function onUpload(e: FormEvent) {
+    e.preventDefault()
+    if (!file) return
 
-    setUploading(true);
-    setProgress(0);
+    const data = new FormData()
+    data.append('file', file)
+
+    setUploading(true)
+    setProgress(0)
     try {
       await api.post('/photos/', data, {
         params: { album_id: albumId },
         headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: ev => setProgress(Math.round((ev.loaded / ev.total!) * 100)),
-      });
-      setFile(null);
-      fetchPhotos();
+        onUploadProgress: ev =>
+          setProgress(Math.round((ev.loaded / ev.total!) * 100)),
+      })
+      setFile(null)
+      fetchPhotos()
     } catch (e) {
-      console.error('Upload failed', e);
-      alert('Upload failed');
+      console.error('Upload failed', e)
+      alert('Upload failed')
     } finally {
-      setUploading(false);
+      setUploading(false)
     }
-  };
+  }
 
-  const deletePhoto = async (photo_id: string) => {
-    if (!confirm('Delete this photo?')) return;
+  async function deletePhoto(photo_id: string) {
+    if (!confirm('Delete this photo?')) return
     try {
-      await api.delete(`/photos/${photo_id}`);
-      // Refresh list from server to ensure pagination consistency
-      fetchPhotos();
+      await api.delete(`/photos/${photo_id}`)
+      fetchPhotos()
     } catch (e: any) {
-      console.error('Delete photo error:', e);
-      alert(e.response?.data?.detail || 'Delete failed');
+      console.error('Delete photo error:', e)
+      alert(e.response?.data?.detail || 'Delete failed')
       if (e.response?.status === 401) {
-        localStorage.removeItem('token');
-        navigate('/login');
+        localStorage.removeItem('token')
+        navigate('/login')
       }
     }
-  };
+  }
 
-  if (loading) return <p className="p-8">Loading photos…</p>;
-  if (error) return <p className="p-8 text-red-600">{error}</p>;
+  if (loading) return <p className="p-8">Loading photos…</p>
+  if (error) return <p className="p-8 text-red-600">{error}</p>
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
@@ -125,8 +132,8 @@ export default function AlbumPage() {
               alt={`Photo ${i + 1}`}
               className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
               onClick={() => {
-                setCurrentIndex(i);
-                setIsOpen(true);
+                setCurrentIndex(i)
+                setIsOpen(true)
               }}
             />
             <button
@@ -153,5 +160,5 @@ export default function AlbumPage() {
         </div>
       )}
     </div>
-  );
+  )
 }

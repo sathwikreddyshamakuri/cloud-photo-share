@@ -1,118 +1,123 @@
 // File: src/pages/Albums.tsx
-import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
+
+import { useState, useEffect } from 'react'
+import type { FormEvent } from 'react'
+import { Link } from 'react-router-dom'
+import api from '../lib/api'
 
 interface Album {
-  album_id: string;
-  owner: string;
-  title: string;
-  created_at: number;
-  cover_url?: string | null;
+  album_id: string
+  owner: string
+  title: string
+  created_at: number
+  cover_url?: string | null
 }
 
 export default function AlbumsPage() {
-  const navigate = useNavigate();
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [filtered, setFiltered] = useState<Album[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameTitle, setRenameTitle] = useState('');
+  const [albums, setAlbums] = useState<Album[]>([])
+  const [filtered, setFiltered] = useState<Album[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameTitle, setRenameTitle] = useState('')
 
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
-      window.location.href = '/login';
-      return;
+    const token = localStorage.getItem('token')
+    if (!token) {
+      window.location.href = '/login'
+      return
     }
-    fetchAlbums();
-  }, []);
+    fetchAlbums()
+  }, [])
 
-  const fetchAlbums = async () => {
-    setLoading(true);
-    setError(null);
+  async function fetchAlbums() {
+    setLoading(true)
+    setError(null)
     try {
-      const res = await api.get<Album[]>('/albums/');
-      setAlbums(res.data);
-      setFiltered(res.data);
+      const res = await api.get<Album[]>('/albums/')
+      setAlbums(res.data)
+      setFiltered(res.data)
     } catch (e: any) {
-      console.error('Failed to load albums', e);
+      console.error('Failed to load albums', e)
       if (e.response?.status === 401) {
-        localStorage.removeItem('token');
-        window.location.href = '/login';
-        return;
+        localStorage.removeItem('token')
+        window.location.href = '/login'
+        return
       }
-      setError('Failed to load albums');
+      setError('Failed to load albums')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   useEffect(() => {
-    setFiltered(albums.filter(a => a.title.toLowerCase().includes(searchTerm.toLowerCase())));
-  }, [searchTerm, albums]);
+    setFiltered(
+      albums.filter(a =>
+        a.title.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+    )
+  }, [searchTerm, albums])
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    window.location.href = '/login';
-  };
+  function handleLogout() {
+    localStorage.removeItem('token')
+    window.location.href = '/login'
+  }
 
-  const handleCreate = async (e: FormEvent) => {
-    e.preventDefault();
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault()
     try {
-      const res = await api.post<Album>('/albums/', { title: newTitle });
-      const updated = [res.data, ...albums];
-      setAlbums(updated);
-      setFiltered(updated);
-      setNewTitle('');
-      setCreating(false);
+      const res = await api.post<Album>('/albums/', { title: newTitle })
+      const updated = [res.data, ...albums]
+      setAlbums(updated)
+      setFiltered(updated)
+      setNewTitle('')
+      setCreating(false)
     } catch (e) {
-      console.error('Create failed', e);
-      alert('Could not create album');
+      console.error('Create failed', e)
+      alert('Could not create album')
     }
-  };
+  }
 
-  const startRename = (alb: Album) => {
-    setRenamingId(alb.album_id);
-    setRenameTitle(alb.title);
-  };
+  function startRename(alb: Album) {
+    setRenamingId(alb.album_id)
+    setRenameTitle(alb.title)
+  }
 
-  const handleRename = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!renamingId) return;
+  async function handleRename(e: FormEvent) {
+    e.preventDefault()
+    if (!renamingId) return
     try {
-      await api.put<Album>(`/albums/${renamingId}`, { title: renameTitle });
+      await api.put<Album>(`/albums/${renamingId}`, { title: renameTitle })
       const updated = albums.map(a =>
         a.album_id === renamingId ? { ...a, title: renameTitle } : a
-      );
-      setAlbums(updated);
-      setFiltered(updated);
-      setRenamingId(null);
+      )
+      setAlbums(updated)
+      setFiltered(updated)
+      setRenamingId(null)
     } catch (e) {
-      console.error('Rename failed', e);
-      alert('Rename failed');
+      console.error('Rename failed', e)
+      alert('Rename failed')
     }
-  };
+  }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this album?')) return;
+  async function handleDelete(id: string) {
+    if (!confirm('Delete this album?')) return
     try {
-      await api.delete(`/albums/${id}`);
-      const updated = albums.filter(a => a.album_id !== id);
-      setAlbums(updated);
-      setFiltered(updated);
+      await api.delete(`/albums/${id}`)
+      const updated = albums.filter(a => a.album_id !== id)
+      setAlbums(updated)
+      setFiltered(updated)
     } catch (e) {
-      console.error('Delete failed', e);
-      alert('Delete failed');
+      console.error('Delete failed', e)
+      alert('Delete failed')
     }
-  };
+  }
 
-  if (loading) return <p className="p-8">Loading albums…</p>;
-  if (error) return <p className="p-8 text-red-600">{error}</p>;
+  if (loading) return <p className="p-8">Loading albums…</p>
+  if (error)   return <p className="p-8 text-red-600">{error}</p>
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
@@ -144,7 +149,10 @@ export default function AlbumsPage() {
 
       <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {filtered.map(alb => (
-          <div key={alb.album_id} className="relative bg-white rounded shadow hover:shadow-lg transition">
+          <div
+            key={alb.album_id}
+            className="relative bg-white rounded shadow hover:shadow-lg transition"
+          >
             <Link to={`/albums/${alb.album_id}`}>
               {alb.cover_url ? (
                 <img
@@ -256,5 +264,5 @@ export default function AlbumsPage() {
         </div>
       )}
     </div>
-  );
+  )
 }
