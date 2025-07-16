@@ -1,5 +1,4 @@
 # app/routers/albums.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from boto3.dynamodb.conditions import Key
@@ -14,38 +13,52 @@ table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
 
 
+# ──────────────────────────────  Schemas  ──────────────────────────────
+class AlbumCreate(BaseModel):
+    title: str
+
+
 class AlbumUpdate(BaseModel):
     title: str
 
 
 class AlbumOut(BaseModel):
-    album_id:   str
-    owner:      str
-    title:      str
+    album_id: str
+    owner: str
+    title: str
     created_at: int
-    cover_url:  str | None = None
+    cover_url: str | None = None
 
 
+# ═════════════════════════════  Handlers  ══════════════════════════════
 @router.post(
     "/albums/",
     response_model=AlbumOut,
     status_code=status.HTTP_201_CREATED,
 )
 def create_album(
-    title: str = Query(..., description="Title of the new album"),
+    # Accept *either* ?title=Foo or JSON {"title": "Foo"}
+    title: str | None = Query(None, description="Title of the new album"),
+    body: AlbumCreate | None = None,
     user_id: str = Depends(current_user),
 ):
     """
-    Create a new album by passing ?title=… in the query string.
+    Create a new album.  
+    - Query‑string:   `/albums/?title=Summer`  
+    - JSON body:      `{ "title": "Summer" }`
     """
+    album_title = title or (body.title if body else None)
+    if not album_title:
+        raise HTTPException(status_code=400, detail="title is required")
+
     album_id = str(uuid.uuid4())
     now = int(time.time())
     item = {
-        "album_id":   album_id,
-        "owner":      user_id,
-        "title":      title,
+        "album_id": album_id,
+        "owner": user_id,
+        "title": album_title,
         "created_at": now,
-        "cover_url":  None,
+        "cover_url": None,
     }
     table_albums.put_item(Item=item)
     return item
@@ -53,25 +66,21 @@ def create_album(
 
 @router.get("/albums/", response_model=list[AlbumOut])
 def list_albums(user_id: str = Depends(current_user)):
-    """
-    List all albums for the current user, with an optional cover_url.
-    """
+    """List albums for the current user, adding a presigned cover_url."""
     resp = table_albums.scan(FilterExpression=Key("owner").eq(user_id))
     items = resp.get("Items", [])
-    # For each album, pick its first photo (if any) as a cover
     for alb in items:
         photos = table_photos.scan(
             FilterExpression=Key("album_id").eq(alb["album_id"])
         ).get("Items", [])
         if photos:
             photos.sort(key=lambda x: x.get("uploaded_at", 0))
-            s3_key = photos[0].get("s3_key")
-            if s3_key:
-                alb["cover_url"] = s3.generate_presigned_url(
-                    "get_object",
-                    Params={"Bucket": S3_BUCKET, "Key": s3_key},
-                    ExpiresIn=3600,
-                )
+            s3_key = photos[0]["s3_key"]
+            alb["cover_url"] = s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": S3_BUCKET, "Key": s3_key},
+                ExpiresIn=3600,
+            )
         else:
             alb["cover_url"] = None
     return items
@@ -83,15 +92,11 @@ def rename_album(
     body: AlbumUpdate,
     user_id: str = Depends(current_user),
 ):
-    """
-    Rename an existing album.
-    """
     resp = table_albums.get_item(Key={"album_id": album_id})
     item = resp.get("Item")
     if not item or item["owner"] != user_id:
-        raise HTTPException(
-            status_code=404, detail="Album not found or unauthorized"
-        )
+        raise HTTPException(status_code=404, detail="Album not found or unauthorized")
+
     table_albums.update_item(
         Key={"album_id": album_id},
         UpdateExpression="SET title = :t",
@@ -106,23 +111,15 @@ def delete_album(
     album_id: str,
     user_id: str = Depends(current_user),
 ):
-    """
-    Delete an album and all its photo metadata.
-    """
     resp = table_albums.get_item(Key={"album_id": album_id})
     item = resp.get("Item")
     if not item or item["owner"] != user_id:
-        raise HTTPException(
-            status_code=404, detail="Album not found or unauthorized"
-        )
+        raise HTTPException(status_code=404, detail="Album not found or unauthorized")
 
-    # 1) Delete the album record
     table_albums.delete_item(Key={"album_id": album_id})
 
-    # 2) Cascade-delete any photos in this album
-    photo_resp = table_photos.scan(
+    # cascade‑delete photo metadata
+    for photo in table_photos.scan(
         FilterExpression=Key("album_id").eq(album_id)
-    )
-    for photo in photo_resp.get("Items", []):
+    ).get("Items", []):
         table_photos.delete_item(Key={"photo_id": photo["photo_id"]})
-    return
