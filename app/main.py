@@ -9,17 +9,21 @@ from .routers import albums, photos
 from .aws_config import dyna, S3_BUCKET, s3   # noqa: F401  (import kept for future use)
 
 app = FastAPI(title="Cloud Photo‑Share API", version="0.6.0")
+import re, os
 
-# ───────────────────────── CORS (TEMPORARY WILDCARD) ─────────────────────────
-# While debugging we allow every Origin.  Lock this down to your Vercel URL(s)
-# once everything is confirmed working in production.
+# ─────────────  CORS  ─────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # ⚠️  TEMPORARY — use explicit list later
+    # Allow any https://cloud-photo-share-<slug>.vercel.app
+    allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
+    # still allow your local dev server
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
-    allow_methods=["*"],            # GET, POST, PUT, DELETE, OPTIONS, …
+    allow_methods=["*"],
     allow_headers=["*"],
 )
+# ──────────────────────────────────
+
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Mount routers
