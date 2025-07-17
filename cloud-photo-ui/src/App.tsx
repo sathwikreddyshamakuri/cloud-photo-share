@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import LoginPage  from './pages/LoginPage';
 import AlbumsPage from './pages/Albums';
 import AlbumPage  from './pages/Album';
+import SignupPage from './pages/SignupPage';
 
 function Router() {
   const location = useLocation();
@@ -23,6 +24,11 @@ function Router() {
         path="/login"
         element={token ? <Navigate to="/albums" replace /> : <LoginPage />}
       />
+
+      <Route
+        path="/signup"
+       element={token ? <Navigate to="/albums" replace /> : <SignupPage />}
+     />
 
       <Route
         path="/albums"
