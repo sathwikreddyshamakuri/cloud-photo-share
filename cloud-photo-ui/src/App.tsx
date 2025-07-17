@@ -1,46 +1,52 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
-import AlbumsPage from './pages/Albums';
-import AlbumPage from './pages/Album';
+// cloud-photo-ui/src/App.tsx
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 
-export default function App() {
-  const token = localStorage.getItem('token');
+import LoginPage  from './pages/LoginPage';
+import AlbumsPage from './pages/Albums';
+import AlbumPage  from './pages/Album';
+
+function Router() {
+  const location = useLocation();
+
+  // keep token in React state so it updates after login/logout
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+
+  // whenever route changes, check if localStorage token changed
+  useEffect(() => {
+    setToken(localStorage.getItem('token'));
+  }, [location]);
 
   return (
+    <Routes>
+      <Route
+        path="/login"
+        element={token ? <Navigate to="/albums" replace /> : <LoginPage />}
+      />
+
+      <Route
+        path="/albums"
+        element={token ? <AlbumsPage /> : <Navigate to="/login" replace />}
+      />
+
+      <Route
+        path="/albums/:id"
+        element={token ? <AlbumPage /> : <Navigate to="/login" replace />}
+      />
+
+      {/* catch‑all */}
+      <Route
+        path="*"
+        element={<Navigate to={token ? '/albums' : '/login'} replace />}
+      />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
     <BrowserRouter>
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            token
-              ? <Navigate to="/albums" replace />
-              : <LoginPage />
-          }
-        />
-
-        <Route
-          path="/albums"
-          element={
-            token
-              ? <AlbumsPage />
-              : <Navigate to="/login" replace />
-          }
-        />
-
-        <Route
-          path="/albums/:id"
-          element={
-            token
-              ? <AlbumPage />
-              : <Navigate to="/login" replace />
-          }
-        />
-
-        <Route
-          path="*"
-          element={<Navigate to={token ? "/albums" : "/login"} replace />}
-        />
-      </Routes>
+      <Router />
     </BrowserRouter>
   );
 }
