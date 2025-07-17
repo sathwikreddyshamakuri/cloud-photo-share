@@ -37,9 +37,9 @@ export default function AlbumsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<Album[]>('/albums/');
-      setAlbums(res.data);
-      setFiltered(res.data);
+      const res = await api.get<{ items: Album[] }>('/albums/');
+      setAlbums(res.data.items);
+      setFiltered(res.data.items);
     } catch (e: any) {
       console.error('Failed to load albums', e);
       if (e.response?.status === 401) {
@@ -69,7 +69,7 @@ export default function AlbumsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     try {
-      const res = await api.post<Album>('/albums/', { title: newTitle });
+      const res = await api.post<Album>('/albums/', null, { params: { title: newTitle } });
       const updated = [res.data, ...albums];
       setAlbums(updated);
       setFiltered(updated);
