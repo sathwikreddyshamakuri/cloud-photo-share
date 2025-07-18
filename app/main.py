@@ -4,7 +4,7 @@ import re
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.routers import photos, albums, users
 #  Auth helpers 
 from .auth import RegisterIn, LoginIn, register_user, login_user
 
@@ -29,6 +29,7 @@ from app.routers import photos, albums  # noqa: E402
 
 app.include_router(albums.router, tags=["albums"])
 app.include_router(photos.router, tags=["photos"])
+app.include_router(users.router,  tags=["users"])
 
 @app.get("/health")
 def health():
