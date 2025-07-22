@@ -1,4 +1,5 @@
-import { useEffect, useState, FormEvent, ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent, ChangeEvent } from 'react';
 import api from '../lib/api';
 
 type Me = {
