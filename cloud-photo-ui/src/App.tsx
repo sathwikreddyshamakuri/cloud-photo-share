@@ -1,3 +1,4 @@
+// force redeploy
 // cloud-photo-ui/src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
