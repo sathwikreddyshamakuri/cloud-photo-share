@@ -3,6 +3,12 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, constr
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
+from pydantic import BaseModel, constr
+from ..auth import current_user, verify_pw, hash_pw
+
+class PasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: constr(min_length=6)
 
 router = APIRouter()
 table_users = dyna.Table("Users")
@@ -77,3 +83,19 @@ async def upload_avatar(
         ExpiresIn=3600,
     )
     return {"avatar_url": url}
+
+@router.put("/users/me/password")
+def change_password(
+    data: PasswordChangeIn,
+    user_id: str = Depends(current_user),
+):
+    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
+    if not item:
+        raise HTTPException(404, "User not found")
+
+    if not verify_pw(data.current_password, item["password_hash"]):
+        raise HTTPException(403, "Wrong current password")
+
+    item["password_hash"] = hash_pw(data.new_password)
+    table_users.put_item(Item=item)
+    return {"msg": "password changed"}
