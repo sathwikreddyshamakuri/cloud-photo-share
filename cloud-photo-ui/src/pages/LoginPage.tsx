@@ -1,6 +1,7 @@
+// cloud-photo-ui/src/pages/LoginPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import api from '../lib/api';
 
 export default function LoginPage() {
@@ -8,9 +9,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError]       = useState<string | null>(null);
 
-  const navigate  = useNavigate();
-  const location  = useLocation();
-  const flashMsg  = (location.state as any)?.msg ?? null;   // message from sign‑up
+  const location = useLocation();
+  const flashMsg = (location.state as any)?.msg ?? null;
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -18,7 +18,12 @@ export default function LoginPage() {
     try {
       const res = await api.post('/login', { email, password });
       localStorage.setItem('token', res.data.access_token);
-      navigate('/albums', { replace: true });
+
+      // make sure the rest of the app notices the new token
+      window.dispatchEvent(new Event('token-change'));
+
+      // hard redirect so Router picks up token immediately
+      window.location.replace('/albums');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
@@ -64,7 +69,7 @@ export default function LoginPage() {
         <p className="mt-3 text-sm text-center">
           Need an account?{' '}
           <Link to="/signup" className="text-blue-600 hover:underline">
-            Sign up
+            Sign up
           </Link>
         </p>
       </form>
