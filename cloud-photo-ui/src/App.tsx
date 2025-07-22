@@ -6,7 +6,7 @@ import LoginPage  from './pages/LoginPage';
 import AlbumsPage from './pages/Albums';
 import AlbumPage  from './pages/Album';
 import SignupPage from './pages/SignupPage';
-import ProfilePage from './pages/ProfilePage';
+import ProfilePage from './pages/profilepage';
 
 function Router() {
   const location = useLocation();
