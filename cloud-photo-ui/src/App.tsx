@@ -6,6 +6,7 @@ import LoginPage  from './pages/LoginPage';
 import AlbumsPage from './pages/Albums';
 import AlbumPage  from './pages/Album';
 import SignupPage from './pages/SignupPage';
+import ProfilePage from './pages/ProfilePage';
 
 function Router() {
   const location = useLocation();
@@ -38,6 +39,11 @@ function Router() {
       <Route
         path="/albums/:id"
         element={token ? <AlbumPage /> : <Navigate to="/login" replace />}
+      />
+
+      <Route
+        path="/profile"
+        element={token ? <ProfilePage /> : <Navigate to="/login" replace />}
       />
 
       {/* catch‑all */}
