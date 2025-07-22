@@ -1,5 +1,5 @@
 # app/routers/users.py
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, constr
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
@@ -49,3 +49,31 @@ def update_me(
     item["bio"] = data.bio or ""
     table_users.put_item(Item=item)
     return {"msg": "updated"}
+
+
+@router.put("/users/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user_id: str = Depends(current_user),
+):
+    if file.content_type not in ("image/jpeg", "image/png"):
+        raise HTTPException(415, "Only JPEG or PNG allowed")
+
+    ext = ".png" if file.content_type.endswith("png") else ".jpg"
+    key = f"avatars/{user_id}{ext}"
+
+    s3.upload_fileobj(file.file, S3_BUCKET, key)
+
+    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
+    if not item:
+        raise HTTPException(404, "User not found")
+
+    item["avatar_key"] = key
+    table_users.put_item(Item=item)
+
+    url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": key},
+        ExpiresIn=3600,
+    )
+    return {"avatar_url": url}
