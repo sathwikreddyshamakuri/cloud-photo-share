@@ -1,37 +1,35 @@
 // File: src/pages/Albums.tsx
-import { useState, useEffect } from 'react';
-import type { FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
 interface Album {
-  album_id:   string;
-  owner:      string;
-  title:      string;
+  album_id: string;
+  owner: string;
+  title: string;
   created_at: number;
   cover_url?: string | null;
 }
 
 export default function AlbumsPage() {
   const navigate = useNavigate();
-  const [albums, setAlbums]       = useState<Album[]>([]);
-  const [filtered, setFiltered]   = useState<Album[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [filtered, setFiltered] = useState<Album[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [creating, setCreating]   = useState(false);
-  const [newTitle, setNewTitle]   = useState('');
-  const [renamingId, setRenamingId]   = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+    if (!localStorage.getItem('token')) {
       navigate('/login', { replace: true });
       return;
     }
     fetchAlbums();
-  }, [navigate]);
+  }, []);
 
   async function fetchAlbums() {
     setLoading(true);
@@ -54,11 +52,8 @@ export default function AlbumsPage() {
   }
 
   useEffect(() => {
-    setFiltered(
-      albums.filter(a =>
-        a.title.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    );
+    const term = searchTerm.toLowerCase();
+    setFiltered(albums.filter(a => a.title.toLowerCase().includes(term)));
   }, [searchTerm, albums]);
 
   function handleLogout() {
@@ -69,6 +64,7 @@ export default function AlbumsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     try {
+      // backend accepts either JSON body or query param; using query param here
       const res = await api.post<Album>('/albums/', null, { params: { title: newTitle } });
       const updated = [res.data, ...albums];
       setAlbums(updated);
@@ -90,15 +86,15 @@ export default function AlbumsPage() {
     e.preventDefault();
     if (!renamingId) return;
     try {
-      await api.put<Album>(`/albums/${renamingId}`, { title: renameTitle });
-      setAlbums(albums.map(a =>
+      await api.put(`/albums/${renamingId}`, { title: renameTitle });
+      const updated = albums.map(a =>
         a.album_id === renamingId ? { ...a, title: renameTitle } : a
-      ));
-      setFiltered(filtered.map(a =>
-        a.album_id === renamingId ? { ...a, title: renameTitle } : a
-      ));
+      );
+      setAlbums(updated);
+      setFiltered(updated);
       setRenamingId(null);
-    } catch {
+    } catch (e) {
+      console.error('Rename failed', e);
       alert('Rename failed');
     }
   }
@@ -107,9 +103,11 @@ export default function AlbumsPage() {
     if (!confirm('Delete this album?')) return;
     try {
       await api.delete(`/albums/${id}`);
-      setAlbums(albums.filter(a => a.album_id !== id));
-      setFiltered(filtered.filter(a => a.album_id !== id));
-    } catch {
+      const updated = albums.filter(a => a.album_id !== id);
+      setAlbums(updated);
+      setFiltered(updated);
+    } catch (e) {
+      console.error('Delete failed', e);
       alert('Delete failed');
     }
   }
@@ -120,12 +118,20 @@ export default function AlbumsPage() {
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
       <div className="flex justify-between items-center mb-6">
-        <button
-          onClick={handleLogout}
-          className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
-        >
-          Logout
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => navigate('/profile')}
+            className="rounded bg-gray-200 px-3 py-1 hover:bg-gray-300"
+          >
+            Profile
+          </button>
+          <button
+            onClick={handleLogout}
+            className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
+          >
+            Logout
+          </button>
+        </div>
         <h1 className="text-3xl font-bold">Your Albums</h1>
         <button
           onClick={() => setCreating(true)}
@@ -138,7 +144,7 @@ export default function AlbumsPage() {
       <div className="mb-4">
         <input
           type="text"
-          placeholder="Search albums…"
+          placeholder="Search albums..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
           className="rounded border p-2 w-full max-w-sm"
@@ -147,21 +153,19 @@ export default function AlbumsPage() {
 
       <div className="grid gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         {filtered.map(alb => (
-          <div
-            key={alb.album_id}
-            className="relative bg-white rounded shadow hover:shadow-lg transition"
-          >
+          <div key={alb.album_id} className="relative bg-white rounded shadow hover:shadow-lg transition">
             <Link to={`/albums/${alb.album_id}`}>
-              {alb.cover_url
-                ? <img
-                    src={alb.cover_url}
-                    alt={alb.title}
-                    className="h-48 w-full object-cover rounded-t"
-                  />
-                : <div className="h-48 w-full bg-gray-200 flex items-center justify-center rounded-t">
-                    <span className="text-gray-500">No preview</span>
-                  </div>
-              }
+              {alb.cover_url ? (
+                <img
+                  src={alb.cover_url}
+                  alt={alb.title}
+                  className="h-48 w-full object-cover rounded-t"
+                />
+              ) : (
+                <div className="h-48 w-full bg-gray-200 flex items-center justify-center rounded-t">
+                  <span className="text-gray-500">No preview</span>
+                </div>
+              )}
               <div className="p-4">
                 <h2 className="text-lg font-medium">{alb.title}</h2>
               </div>
