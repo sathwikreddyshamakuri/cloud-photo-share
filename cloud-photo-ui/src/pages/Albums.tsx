@@ -1,5 +1,6 @@
 // File: src/pages/Albums.tsx
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
@@ -64,7 +65,6 @@ export default function AlbumsPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     try {
-      // backend accepts either JSON body or query param; using query param here
       const res = await api.post<Album>('/albums/', null, { params: { title: newTitle } });
       const updated = [res.data, ...albums];
       setAlbums(updated);
