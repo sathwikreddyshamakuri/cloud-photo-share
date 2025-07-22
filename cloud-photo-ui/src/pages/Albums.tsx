@@ -119,30 +119,30 @@ export default function AlbumsPage() {
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
       <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={() => navigate('/profile')}
-            className="rounded bg-gray-200 px-3 py-1 hover:bg-gray-300"
-          >
-            Profile
-          </button>
-          <button
-            onClick={handleLogout}
-            className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
-          >
-            Logout
-          </button>
-        </div>
-        <h1 className="text-3xl font-bold">Your Albums</h1>
-        <button
-          onClick={() => setCreating(true)}
-          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500"
-        >
-          + New Album
-        </button>
-      </div>
-
-      <div className="mb-4">
+  <div className="flex items-center space-x-2">
+    <button
+      onClick={() => navigate('/profile')}
+      className="rounded bg-gray-200 px-3 py-1 hover:bg-gray-300"
+    >
+      Profile
+    </button>
+    <button
+      onClick={handleLogout}
+      className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
+    >
+      Logout
+    </button>
+  </div>
+  <h1 className="text-3xl font-bold">Your Albums</h1>
+  <button
+    onClick={() => setCreating(true)}
+    className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500"
+  >
+    + New Album
+  </button>
+  </div>
+  
+  <div className="mb-4">
         <input
           type="text"
           placeholder="Search albums..."
