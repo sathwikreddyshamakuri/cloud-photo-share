@@ -5,6 +5,9 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import photos, albums, users
+from .routers import account
+app.include_router(account.router)
+
 #  Auth helpers 
 from .auth import RegisterIn, LoginIn, register_user, login_user
 
