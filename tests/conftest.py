@@ -2,11 +2,10 @@
 PyTest session-wide fixtures & global config
 -------------------------------------------
 
-* aws_stubs – spins up Moto’s in-memory DynamoDB & S3
+* aws_stubs – spins up Moto’s in-memory DynamoDB & S3 (and now Tokens)
 * warning filter – hides botocore’s utcnow deprecation spam
 """
 
-from pathlib import Path
 import os
 import warnings
 
@@ -14,27 +13,28 @@ import boto3
 import pytest
 from moto import mock_aws  # moto ≥5.x unified entry-point
 
-# ─── Hard-coded env defaults so the app imports without real AWS creds ─────────
+#Hard-coded env so app imports cleanly in tests 
 os.environ.setdefault("S3_BUCKET", "test-bucket")
 os.environ.setdefault("REGION", "us-east-1")
-os.environ.setdefault("JWT_SECRET", "unit-test-secret")   # NEW ⬅⬅⬅
+os.environ.setdefault("JWT_SECRET", "unit-test-secret")
+os.environ.setdefault("EMAIL_SENDER", "no-reply@test.local")
+os.environ.setdefault("PUBLIC_UI_URL", "http://localhost:5173")
 
-# ─── Silence botocore deprecation warnings ────────────────────────────────────
 def pytest_configure():
     warnings.filterwarnings(
         "ignore",
-        message="datetime\\.datetime\\.utcnow\\(\\) is deprecated",
+        message=r"datetime\.datetime\.utcnow\(\) is deprecated",
         module="botocore",
     )
 
-# ─── Moto sandbox for the whole test session ──────────────────────────────────
+#  Moto sandbox for the whole test session 
 @pytest.fixture(autouse=True, scope="session")
 def aws_stubs():
-    """Spin up in-memory DynamoDB & S3 once per test session."""
+    """Spin up in-memory DynamoDB, S3 (and SES via moto) once per test session."""
     with mock_aws():
-        # DynamoDB tables
         dyna = boto3.resource("dynamodb", region_name="us-east-1")
 
+        # Users
         dyna.create_table(
             TableName="Users",
             KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
@@ -42,6 +42,7 @@ def aws_stubs():
             BillingMode="PAY_PER_REQUEST",
         )
 
+        # Albums
         dyna.create_table(
             TableName="Albums",
             KeySchema=[{"AttributeName": "album_id", "KeyType": "HASH"}],
@@ -49,6 +50,7 @@ def aws_stubs():
             BillingMode="PAY_PER_REQUEST",
         )
 
+        # Photos
         dyna.create_table(
             TableName="PhotoMeta",
             KeySchema=[{"AttributeName": "photo_id", "KeyType": "HASH"}],
@@ -68,6 +70,14 @@ def aws_stubs():
                     "Projection": {"ProjectionType": "ALL"},
                 }
             ],
+        )
+
+        # NEW: Tokens table used for forgot-password / verify-email one-time tokens
+        dyna.create_table(
+            TableName="Tokens",
+            KeySchema=[{"AttributeName": "token", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "token", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
         )
 
         # S3 bucket
