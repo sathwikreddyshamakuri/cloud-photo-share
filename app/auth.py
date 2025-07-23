@@ -12,6 +12,9 @@ from boto3.dynamodb.conditions import Attr
 from .aws_config import dyna
 from .emailer import send_email
 
+AUTO_VERIFY = os.getenv("AUTO_VERIFY_USERS", "0") == "1"
+
+
 # ── Config ──────────────────────────────────────────
 SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret")  # already set in tests
 ALGORITHM  = "HS256"
@@ -91,23 +94,27 @@ def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str
 # ── Core auth ───────────────────────────────────────
 def register_user(body: RegisterIn):
     if table_users.scan(FilterExpression=Attr("email").eq(body.email))["Items"]:
-        raise HTTPException(400, "email already registered")
+        raise HTTPException(status_code=400, detail="email already registered")
+
     user_id = str(uuid.uuid4())
-    table_users.put_item(Item={
-        "user_id": user_id,
-        "email": body.email,
+    item = {
+        "user_id":       user_id,
+        "email":         body.email,
         "password_hash": hash_pw(body.password),
-        "email_verified": False,
-    })
-    # send verify email
-    tok = new_one_time_token(user_id, "verify", 24 * 3600)
-    verify_url = f"{os.getenv('PUBLIC_UI_URL', '')}/verify?token={tok}"
-    send_email(
-        to=body.email,
-        subject="Verify your email",
-        html=f"<p>Click to verify: <a href='{verify_url}'>{verify_url}</a></p>",
-        text=f"Verify: {verify_url}",
-    )
+        "email_verified": AUTO_VERIFY,  # auto-verify in tests if flag set
+    }
+    table_users.put_item(Item=item)
+
+    if not AUTO_VERIFY:  # only send verify mail in real env
+        tok = new_one_time_token(user_id, "verify", 24 * 3600)
+        verify_url = f"{os.getenv('PUBLIC_UI_URL', '')}/verify?token={tok}"
+        send_email(
+            to=body.email,
+            subject="Verify your email",
+            html=f"<p>Click to verify: <a href='{verify_url}'>{verify_url}</a></p>",
+            text=f"Verify: {verify_url}",
+        )
+
     return {"user_id": user_id}
 
 def login_user(body: LoginIn):
@@ -120,8 +127,7 @@ def login_user(body: LoginIn):
     if not verify_pw(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="bad credentials")
 
-    # block login until email is verified
-    if not user.get("email_verified", False):
+    if not AUTO_VERIFY and not user.get("email_verified", False):
         raise HTTPException(status_code=403, detail="email not verified")
 
     return {"access_token": create_token(user["user_id"])}

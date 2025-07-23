@@ -13,12 +13,15 @@ import boto3
 import pytest
 from moto import mock_aws  # moto ≥5.x unified entry-point
 
+
 #Hard-coded env so app imports cleanly in tests 
 os.environ.setdefault("S3_BUCKET", "test-bucket")
 os.environ.setdefault("REGION", "us-east-1")
 os.environ.setdefault("JWT_SECRET", "unit-test-secret")
 os.environ.setdefault("EMAIL_SENDER", "no-reply@test.local")
 os.environ.setdefault("PUBLIC_UI_URL", "http://localhost:5173")
+os.environ.setdefault("AUTO_VERIFY_USERS", "1")
+
 
 def pytest_configure():
     warnings.filterwarnings(
