@@ -113,10 +113,17 @@ def register_user(body: RegisterIn):
 def login_user(body: LoginIn):
     resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
     if not resp["Items"]:
-        raise HTTPException(401, "user not found")
+        raise HTTPException(status_code=401, detail="user not found")
+
     user = resp["Items"][0]
+
     if not verify_pw(body.password, user["password_hash"]):
-        raise HTTPException(401, "bad credentials")
+        raise HTTPException(status_code=401, detail="bad credentials")
+
+    # block login until email is verified
+    if not user.get("email_verified", False):
+        raise HTTPException(status_code=403, detail="email not verified")
+
     return {"access_token": create_token(user["user_id"])}
 
 def change_password(user_id: str, data: ChangePwdIn):
