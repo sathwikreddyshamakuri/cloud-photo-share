@@ -14,19 +14,17 @@ from .emailer import send_email
 
 AUTO_VERIFY = os.getenv("AUTO_VERIFY_USERS", "0") == "1"
 
-
-# ── Config ──────────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret")  # already set in tests
+# JWT config
+SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret")
 ALGORITHM  = "HS256"
-TOKEN_TTL  = 60 * 60  # 1h jwt
+TOKEN_TTL  = 60 * 60  # 1 hour
 
 pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 table_users  = dyna.Table("Users")
-table_tokens = dyna.Table("Tokens")  # create this table (see README below)
+table_tokens = dyna.Table("Tokens")
 
-# ── Helpers ─────────────────────────────────────────
 def hash_pw(p: str) -> str:
     return pwd_ctx.hash(p)
 
@@ -44,7 +42,6 @@ def decode_token(token: str) -> str:
     except jwt.PyJWTError:
         raise HTTPException(401, "Invalid or expired token")
 
-# one-time tokens stored in DynamoDB
 def new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str:
     tok = str(uuid.uuid4())
     expires = int(time.time()) + ttl_seconds
@@ -52,7 +49,7 @@ def new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str:
         "token": tok,
         "type": kind,
         "user_id": user_id,
-        "expires_at": expires,   # for TTL
+        "expires_at": expires,
     })
     return tok
 
@@ -64,7 +61,6 @@ def consume_token(token: str, kind: str) -> str:
     table_tokens.delete_item(Key={"token": token})
     return item["user_id"]
 
-# ── Pydantic models ─────────────────────────────────
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
@@ -87,48 +83,57 @@ class ChangePwdIn(BaseModel):
     current_password: str
     new_password: str
 
-# ── Dependency ──────────────────────────────────────
 def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
     return decode_token(creds.credentials)
 
-# ── Core auth ───────────────────────────────────────
 def register_user(body: RegisterIn):
+    # prevent duplicate email
     if table_users.scan(FilterExpression=Attr("email").eq(body.email))["Items"]:
-        raise HTTPException(status_code=400, detail="email already registered")
+        raise HTTPException(400, "email already registered")
 
     user_id = str(uuid.uuid4())
     item = {
-        "user_id":       user_id,
-        "email":         body.email,
-        "password_hash": hash_pw(body.password),
-        "email_verified": AUTO_VERIFY,  # auto-verify in tests if flag set
+        "user_id":        user_id,
+        "email":          body.email,
+        "password_hash":  hash_pw(body.password),
+        "email_verified": AUTO_VERIFY,
     }
     table_users.put_item(Item=item)
 
-    if not AUTO_VERIFY:  # only send verify mail in real env
-        tok = new_one_time_token(user_id, "verify", 24 * 3600)
-        verify_url = f"{os.getenv('PUBLIC_UI_URL', '')}/verify?token={tok}"
-        send_email(
-            to=body.email,
-            subject="Verify your email",
-            html=f"<p>Click to verify: <a href='{verify_url}'>{verify_url}</a></p>",
-            text=f"Verify: {verify_url}",
-        )
+    email_sent = False
+    if not AUTO_VERIFY:
+        token = new_one_time_token(user_id, "verify", 24 * 3600)
+        verify_link = f"{os.getenv('PUBLIC_UI_URL', '')}/verify?token={token}"
+        try:
+            send_email(
+                to=body.email,
+                subject="Verify your email",
+                html=f"<p>Click to verify: <a href='{verify_link}'>{verify_link}</a></p>",
+                text=f"Verify: {verify_link}",
+            )
+            email_sent = True
+        except Exception as e:
+            # Log error but don't block account creation
+            print("EMAIL ERROR:", e)
 
-    return {"user_id": user_id}
+    return {
+        "user_id":     user_id,
+        "email_sent":  email_sent,
+        "need_verify": not AUTO_VERIFY,
+    }
 
 def login_user(body: LoginIn):
     resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
     if not resp["Items"]:
-        raise HTTPException(status_code=401, detail="user not found")
+        raise HTTPException(401, "user not found")
 
     user = resp["Items"][0]
 
     if not verify_pw(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="bad credentials")
+        raise HTTPException(401, "bad credentials")
 
     if not AUTO_VERIFY and not user.get("email_verified", False):
-        raise HTTPException(status_code=403, detail="email not verified")
+        raise HTTPException(403, "email not verified")
 
     return {"access_token": create_token(user["user_id"])}
 
@@ -140,7 +145,6 @@ def change_password(user_id: str, data: ChangePwdIn):
     table_users.put_item(Item=item)
     return {"msg": "changed"}
 
-# ── Forgot / Reset / Verify flows ───────────────────
 def forgot_password(body: ForgotIn):
     resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
     if resp["Items"]:
@@ -153,7 +157,6 @@ def forgot_password(body: ForgotIn):
             html=f"<p>Reset link (1h): <a href='{reset_url}'>{reset_url}</a></p>",
             text=f"Reset: {reset_url}",
         )
-    # always say OK
     return {"msg": "If that email exists, a link was sent."}
 
 def reset_password(body: ResetIn):

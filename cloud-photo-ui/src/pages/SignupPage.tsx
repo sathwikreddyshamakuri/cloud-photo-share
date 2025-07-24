@@ -1,7 +1,14 @@
+// cloud-photo-ui/src/pages/SignupPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api';
+
+type RegisterResp = {
+  user_id: string;
+  email_sent: boolean;
+  need_verify: boolean;
+};
 
 export default function SignupPage() {
   const [email, setEmail]       = useState('');
@@ -13,9 +20,21 @@ export default function SignupPage() {
     e.preventDefault();
     setError(null);
     try {
-      await api.post('/register', { email, password });
-      // Success → send them to login with a flash message or auto‑login
-      navigate('/login', { replace: true, state: { msg: 'Account created! Please log in.' } });
+      const res = await api.post<RegisterResp>('/register', { email, password });
+
+      if (res.data.need_verify) {
+        navigate('/login', {
+          replace: true,
+          state: {
+            msg: res.data.email_sent
+              ? 'Account created! Check your email to verify your account.'
+              : 'Account created, but we could not send a verification email. Try again later.'
+          }
+        });
+      } else {
+        // auto-verified (e.g., AUTO_VERIFY_USERS=1)
+        navigate('/albums', { replace: true });
+      }
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Sign‑up failed');
     }
@@ -26,6 +45,7 @@ export default function SignupPage() {
       <form onSubmit={onSubmit} className="bg-white p-6 rounded shadow-md w-80">
         <h2 className="text-xl font-semibold mb-4">Create Account</h2>
         {error && <p className="text-red-500 mb-2">{error}</p>}
+
         <label className="block mb-2">
           Email
           <input
@@ -36,6 +56,7 @@ export default function SignupPage() {
             required
           />
         </label>
+
         <label className="block mb-4">
           Password
           <input
@@ -47,16 +68,18 @@ export default function SignupPage() {
             minLength={6}
           />
         </label>
+
         <button
           type="submit"
           className="w-full bg-green-600 text-white p-2 rounded hover:bg-green-700"
         >
-          Sign Up
+          Sign Up
         </button>
+
         <p className="mt-3 text-sm text-center">
           Already have an account?{' '}
           <Link to="/login" className="text-blue-600 hover:underline">
-            Log in
+            Log in
           </Link>
         </p>
       </form>
