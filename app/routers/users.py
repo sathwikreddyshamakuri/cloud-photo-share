@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, constr
 from boto3.dynamodb.conditions import Attr, Key
-
+from fastapi import UploadFile, File
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
 
@@ -50,10 +50,33 @@ def update_me(data: ProfileUpdateIn, user_id: str = Depends(current_user)):
     table_users.put_item(Item=item)
     return {"msg": "updated"}
 
-
 @router.put("/users/me/avatar")
-def update_avatar(file: bytes = Depends(), user_id: str = Depends(current_user)):  # keep your existing version if different
-    raise HTTPException(501, "Not implemented here")  # placeholder so this snippet compiles if you already moved avatar
+def update_avatar(
+    file: UploadFile = File(...),
+    user_id: str = Depends(current_user),
+):
+    # read the file and push to S3
+    contents = file.file.read()
+    if not contents:
+        raise HTTPException(400, "empty file")
+
+    # generate a key, save to user
+    key = f"avatars/{user_id}.png"
+    s3.put_object(Bucket=S3_BUCKET, Key=key, Body=contents, ContentType=file.content_type or "image/png")
+
+    # update user record with avatar_key
+    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
+    if not item:
+        raise HTTPException(404, "User not found")
+    item["avatar_key"] = key
+    table_users.put_item(Item=item)
+
+    url = s3.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": S3_BUCKET, "Key": key},
+        ExpiresIn=3600,
+    )
+    return {"avatar_url": url}
 
 
 @router.delete("/users/me", status_code=status.HTTP_204_NO_CONTENT)

@@ -1,5 +1,6 @@
 // cloud-photo-ui/src/pages/ProfilePage.tsx
-import { useEffect, useState, FormEvent, ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
+import type { FormEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
@@ -23,15 +24,16 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    api.get<Me>('/users/me').then(r => {
-      setMe(r.data);
-      setName(r.data.display_name);
-      setBio(r.data.bio);
-    }).catch(() => {
-      // if token died, log out
-      localStorage.removeItem('token');
-      navigate('/login', { replace: true });
-    });
+    api.get<Me>('/users/me')
+      .then(r => {
+        setMe(r.data);
+        setName(r.data.display_name);
+        setBio(r.data.bio);
+      })
+      .catch(() => {
+        localStorage.removeItem('token');
+        navigate('/login', { replace: true });
+      });
   }, [navigate]);
 
   async function saveProfile(e: FormEvent) {
@@ -78,15 +80,13 @@ export default function ProfilePage() {
   }
 
   async function deleteAccount() {
-    const first = confirm('This will permanently delete your account, albums and photos. Continue?');
-    if (!first) return;
+    if (!confirm('This will permanently delete your account, albums and photos. Continue?')) return;
     const second = prompt('Type DELETE to confirm:');
     if (second !== 'DELETE') return;
-
     try {
       await api.delete('/users/me');
-    } catch (err) {
-      alert('Delete failed: ' + (err as any).response?.data?.detail ?? '');
+    } catch (err: any) {
+      alert('Delete failed: ' + (err.response?.data?.detail ?? ''));
       return;
     }
     localStorage.removeItem('token');
@@ -94,6 +94,8 @@ export default function ProfilePage() {
   }
 
   if (!me) return <p className="p-8">Loading…</p>;
+
+  const initial = (me.display_name || me.email)[0].toUpperCase();
 
   return (
     <div className="p-8 max-w-xl mx-auto space-y-8">
@@ -110,7 +112,7 @@ export default function ProfilePage() {
             />
           ) : (
             <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center text-xl">
-              {(me.display_name[0] || me.email[0]).toUpperCase()}
+              {initial}
             </div>
           )}
           <label className="cursor-pointer text-blue-600 hover:underline">
