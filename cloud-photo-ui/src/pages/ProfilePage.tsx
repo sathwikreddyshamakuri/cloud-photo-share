@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import type { FormEvent, ChangeEvent } from 'react';
+// cloud-photo-ui/src/pages/ProfilePage.tsx
+import { useEffect, useState, FormEvent, ChangeEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
 type Me = {
@@ -11,6 +12,7 @@ type Me = {
 };
 
 export default function ProfilePage() {
+  const navigate = useNavigate();
   const [me, setMe] = useState<Me | null>(null);
   const [name, setName] = useState('');
   const [bio, setBio] = useState('');
@@ -25,8 +27,12 @@ export default function ProfilePage() {
       setMe(r.data);
       setName(r.data.display_name);
       setBio(r.data.bio);
+    }).catch(() => {
+      // if token died, log out
+      localStorage.removeItem('token');
+      navigate('/login', { replace: true });
     });
-  }, []);
+  }, [navigate]);
 
   async function saveProfile(e: FormEvent) {
     e.preventDefault();
@@ -43,7 +49,7 @@ export default function ProfilePage() {
     e.preventDefault();
     setPwdMsg(null);
     try {
-      await api.put('/users/me/password', {
+      await api.put('/auth/password', {
         current_password: pwdCur,
         new_password: pwdNew,
       });
@@ -71,6 +77,22 @@ export default function ProfilePage() {
     }
   }
 
+  async function deleteAccount() {
+    const first = confirm('This will permanently delete your account, albums and photos. Continue?');
+    if (!first) return;
+    const second = prompt('Type DELETE to confirm:');
+    if (second !== 'DELETE') return;
+
+    try {
+      await api.delete('/users/me');
+    } catch (err) {
+      alert('Delete failed: ' + (err as any).response?.data?.detail ?? '');
+      return;
+    }
+    localStorage.removeItem('token');
+    window.location.replace('/signup');
+  }
+
   if (!me) return <p className="p-8">Loading…</p>;
 
   return (
@@ -88,7 +110,7 @@ export default function ProfilePage() {
             />
           ) : (
             <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center text-xl">
-              {me.display_name[0]?.toUpperCase() ?? me.email[0].toUpperCase()}
+              {(me.display_name[0] || me.email[0]).toUpperCase()}
             </div>
           )}
           <label className="cursor-pointer text-blue-600 hover:underline">
@@ -158,6 +180,17 @@ export default function ProfilePage() {
         </button>
         {pwdMsg && <p className="text-sm mt-2">{pwdMsg}</p>}
       </form>
+
+      {/* Danger Zone */}
+      <div className="border-t pt-6">
+        <h2 className="text-lg font-semibold text-red-600 mb-3">Danger zone</h2>
+        <button
+          onClick={deleteAccount}
+          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500"
+        >
+          Delete my account
+        </button>
+      </div>
     </div>
   );
 }
