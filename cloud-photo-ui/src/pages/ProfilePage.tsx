@@ -1,35 +1,31 @@
-// cloud-photo-ui/src/pages/ProfilePage.tsx
 import { useEffect, useState } from 'react'
 import type { FormEvent, ChangeEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Swal from 'sweetalert2'
-import toast from 'react-hot-toast'
 import api from '../lib/api'
 
 type Me = {
-  user_id: string
-  email: string
-  display_name: string
-  bio: string
-  avatar_url: string | null
+  user_id:     string
+  email:       string
+  display_name:string
+  bio:         string
+  avatar_url:  string | null
 }
 
 export default function ProfilePage() {
   const navigate = useNavigate()
 
-  const [me, setMe]           = useState<Me | null>(null)
-  const [name, setName]       = useState('')
-  const [bio,  setBio]        = useState('')
+  const [me, setMe]         = useState<Me | null>(null)
+  const [name, setName]     = useState('')
+  const [bio,  setBio]      = useState('')
 
-  const [pwdCur, setPwdCur]   = useState('')
-  const [pwdNew, setPwdNew]   = useState('')
-  const [pwdMsg, setPwdMsg]   = useState<string | null>(null)
+  const [pwdCur, setPwdCur] = useState('')
+  const [pwdNew, setPwdNew] = useState('')
+  const [pwdMsg, setPwdMsg] = useState<string | null>(null)
 
   const [saving,    setSaving]    = useState(false)
-  const [dirty,     setDirty]     = useState(false)   // disables Save until something changes
   const [uploading, setUploading] = useState(false)
 
-  /* ─────────── initial load ─────────── */
+  /* initial load */
   useEffect(() => {
     api.get<Me>('/users/me')
       .then(r => {
@@ -43,27 +39,28 @@ export default function ProfilePage() {
       })
   }, [navigate])
 
-  /* ─────────── handlers ─────────── */
+  /* save profile */
   async function saveProfile(e: FormEvent) {
     e.preventDefault()
-    if (!dirty) return
     setSaving(true)
     try {
       await api.put('/users/me', { display_name: name, bio })
       setMe(m => (m ? { ...m, display_name: name, bio } : m))
-      toast.success('Profile saved')
-      setDirty(false)
     } finally {
       setSaving(false)
     }
   }
 
+  /* change password */
   async function changePwd(e: FormEvent) {
     e.preventDefault()
     setPwdMsg(null)
     try {
-      await api.put('/auth/password', { current_password: pwdCur, new_password: pwdNew })
-      toast.success('Password updated')
+      await api.put('/users/me/password', {
+        current_password: pwdCur,
+        new_password:     pwdNew,
+      })
+      setPwdMsg('Password changed. Log in again next time.')
       setPwdCur('')
       setPwdNew('')
     } catch (err: any) {
@@ -71,6 +68,7 @@ export default function ProfilePage() {
     }
   }
 
+  /* avatar upload */
   async function onAvatar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -78,66 +76,47 @@ export default function ProfilePage() {
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const r = await api.put('/users/me/avatar', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const r = await api.put('/users/me/avatar', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
       setMe(m => (m ? { ...m, avatar_url: r.data.avatar_url } : m))
-      toast.success('Avatar updated')
     } finally {
       setUploading(false)
     }
   }
 
-  async function deleteAccount() {
-    const res = await Swal.fire({
-      title: 'Delete account?',
-      text:  'All albums and photos will be removed.',
-      icon:  'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      confirmButtonText: 'Yes, delete it',
-    })
-    if (!res.isConfirmed) return
-
-    try {
-      await api.delete('/users/me')
-      toast.success('Account deleted')
-    } catch (err: any) {
-      Swal.fire('Error', err.response?.data?.detail || 'Delete failed', 'error')
-      return
-    }
-
-    localStorage.removeItem('token')
-    window.location.replace('/signup')
-  }
-
-  /* ─────────── ui ─────────── */
   if (!me) return <p className="p-8">Loading…</p>
   const initial = (me.display_name || me.email)[0].toUpperCase()
 
   return (
     <div className="p-8 max-w-xl mx-auto space-y-8">
-      <h1 className="text-2xl font-bold">Profile</h1>
+      {/* header with back button */}
+      <div className="flex items-center mb-4">
+        <button
+          onClick={() => navigate(-1)}
+          className="mr-3 text-blue-600 hover:underline"
+        >
+          ← Back
+        </button>
+        <h1 className="text-2xl font-bold">Profile</h1>
+      </div>
 
       {/* avatar */}
       <section className="space-y-3">
         <div className="flex items-center space-x-4">
           {me.avatar_url ? (
-            <img src={me.avatar_url} alt="avatar" className="h-20 w-20 rounded-full object-cover border" />
+            <img
+              src={me.avatar_url}
+              alt="avatar"
+              className="h-20 w-20 rounded-full object-cover border"
+            />
           ) : (
             <div className="h-20 w-20 rounded-full bg-gray-300 flex items-center justify-center text-xl">
               {initial}
             </div>
           )}
-
           <label className="cursor-pointer text-blue-600 hover:underline">
-            {uploading ? (
-              <span className="inline-flex items-center">
-                <svg className="animate-spin h-4 w-4 mr-1" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                </svg>
-                Uploading…
-              </span>
-            ) : 'Change photo'}
+            {uploading ? 'Uploading…' : 'Change photo'}
             <input type="file" className="hidden" onChange={onAvatar} accept="image/*" />
           </label>
         </div>
@@ -150,26 +129,24 @@ export default function ProfilePage() {
           <input
             className="w-full border rounded p-2"
             value={name}
-            onChange={e => { setName(e.target.value); setDirty(true) }}
+            onChange={e => setName(e.target.value)}
             required
             maxLength={40}
           />
         </div>
-
         <div>
           <label className="block text-sm mb-1">Bio</label>
           <textarea
             className="w-full border rounded p-2"
             value={bio}
-            onChange={e => { setBio(e.target.value); setDirty(true) }}
+            onChange={e => setBio(e.target.value)}
             maxLength={200}
             rows={3}
           />
         </div>
-
         <button
           type="submit"
-          disabled={saving || !dirty}
+          disabled={saving}
           className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-500 disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save'}
@@ -179,7 +156,6 @@ export default function ProfilePage() {
       {/* change password */}
       <form onSubmit={changePwd} className="space-y-4 border-t pt-6">
         <h2 className="text-lg font-semibold">Change password</h2>
-
         <div>
           <label className="block text-sm mb-1">Current password</label>
           <input
@@ -190,7 +166,6 @@ export default function ProfilePage() {
             required
           />
         </div>
-
         <div>
           <label className="block text-sm mb-1">New password</label>
           <input
@@ -202,23 +177,11 @@ export default function ProfilePage() {
             minLength={6}
           />
         </div>
-
         <button className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-500">
           Update password
         </button>
-
         {pwdMsg && <p className="text-sm mt-2">{pwdMsg}</p>}
       </form>
-
-      {/* delete */}
-      <div className="border-t pt-6 sm:text-right">
-        <button
-          onClick={deleteAccount}
-          className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-500"
-        >
-          Delete my account
-        </button>
-      </div>
     </div>
   )
 }
