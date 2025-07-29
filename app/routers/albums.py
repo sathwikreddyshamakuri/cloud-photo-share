@@ -15,12 +15,12 @@ table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
 
 
-# ---------- models ----------
+#  models
 class AlbumUpdateIn(BaseModel):
     title: str
 
 
-# ---------- helpers ----------
+#  helpers 
 def _album_item(album_id: str):
     return table_albums.get_item(Key={"album_id": album_id}).get("Item")
 
@@ -50,7 +50,7 @@ def _make_cover_url(photo_item: dict | None) -> Optional[str]:
         return None
 
 
-# ---------- create album ----------
+#  create album 
 @router.post("/albums/", status_code=status.HTTP_201_CREATED)
 def create_album(
     # Accept title in either JSON body or query param (UI-safe)
@@ -62,6 +62,12 @@ def create_album(
         title = body["title"]
     if not title:
         raise HTTPException(400, "title is required")
+    # disallow duplicates per user
+    if table_albums.scan(
+        FilterExpression=Attr("owner").eq(user_id) & Attr("title").eq(title)
+)   ["Items"]:
+        raise HTTPException(400, "album title already exists")
+
 
     album_id = str(uuid.uuid4())
     now = int(time.time())
@@ -83,7 +89,7 @@ def create_album(
     }
 
 
-# ---------- list albums ----------
+# list albums 
 @router.get("/albums/")
 def list_albums(
     limit: int = Query(50, gt=0),
@@ -105,7 +111,7 @@ def list_albums(
     return {"items": items, "next_key": None}  # simple paging for now
 
 
-# ---------- rename album ----------
+# rename album 
 @router.put("/albums/{album_id}", response_model=None)
 def rename_album(
     album_id: str,
@@ -115,6 +121,11 @@ def rename_album(
     alb = _album_item(album_id)
     if not alb or alb["owner"] != user_id:
         raise HTTPException(404, "Album not found")
+    if table_albums.scan(
+        FilterExpression=Attr("owner").eq(user_id) & Attr("title").eq(data.title)
+)   ["Items"]:
+        raise HTTPException(400, "album title already exists")
+
 
     alb["title"] = data.title
     table_albums.put_item(Item=alb)  # overwrite
@@ -124,7 +135,7 @@ def rename_album(
     return alb
 
 
-# ---------- delete album ----------
+
 @router.delete("/albums/{album_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_album(album_id: str, user_id: str = Depends(current_user)):
     alb = _album_item(album_id)
