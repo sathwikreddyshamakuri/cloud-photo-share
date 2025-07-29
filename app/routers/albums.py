@@ -4,10 +4,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException, Depends, status, Body
 from pydantic import BaseModel
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 
 from ..auth import current_user
 from ..aws_config import dyna, s3, S3_BUCKET
+
 
 router = APIRouter()
 
