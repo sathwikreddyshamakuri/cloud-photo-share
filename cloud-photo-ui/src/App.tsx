@@ -8,8 +8,10 @@ import ForgotPasswordPage  from './pages/ForgotPassword';
 import ResetPasswordPage   from './pages/ResetPassword';
 import VerifyEmailPage     from './pages/VerifyEmail';
 import AlbumsPage          from './pages/Albums';
+import WelcomePage         from './pages/WelcomePage';   
 import AlbumPage           from './pages/Album';
 import ProfilePage         from './pages/ProfilePage';
+  
 
 function Router() {
   const location = useLocation();
@@ -34,6 +36,7 @@ function Router() {
         <Route path="/verify"  element={token ? <Navigate to="/albums" replace /> : <VerifyEmailPage />} />
 
         {/* private */}
+        <Route path="/welcome"   element={token ? <WelcomePage /> : <Navigate to="/login" replace />} />
         <Route path="/albums"     element={token ? <AlbumsPage /> : <Navigate to="/login" replace />} />
         <Route path="/albums/:id" element={token ? <AlbumPage  /> : <Navigate to="/login" replace />} />
         <Route path="/profile"    element={token ? <ProfilePage /> : <Navigate to="/login" replace />} />
