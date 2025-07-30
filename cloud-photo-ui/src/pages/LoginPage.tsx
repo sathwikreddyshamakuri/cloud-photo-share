@@ -1,4 +1,3 @@
-// cloud-photo-ui/src/pages/LoginPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useLocation, Link } from 'react-router-dom';
@@ -18,12 +17,9 @@ export default function LoginPage() {
     try {
       const res = await api.post('/login', { email, password });
       localStorage.setItem('token', res.data.access_token);
-
-      // make sure the rest of the app notices the new token
       window.dispatchEvent(new Event('token-change'));
-
-      // hard redirect so Router picks up token immediately
       window.location.replace('/albums');
+      window.location.replace('/welcome');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
