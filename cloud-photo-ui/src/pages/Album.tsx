@@ -1,124 +1,138 @@
 // cloud-photo-ui/src/pages/Album.tsx
-import { useState, useEffect, useCallback, useRef } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useSwipeable } from 'react-swipeable'
-import api from '../lib/api'
+import { useState, useEffect, useCallback, useRef } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useSwipeable } from 'react-swipeable';
+import api from '../lib/api';
 
 interface PhotoMeta {
-  photo_id:    string
-  album_id:    string
-  s3_key:      string
-  uploaded_at: number
-  url:         string
+  photo_id: string;
+  album_id: string;
+  s3_key: string;
+  uploaded_at: number;
+  url: string;
+}
+
+/* ─────────── custom hook (hoisted) ─────────── */
+function useAutoFocus(enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (enabled) ref.current?.focus();
+  }, [enabled]);
+  return ref;
 }
 
 export default function AlbumPage() {
-  const { id: albumId } = useParams<{ id: string }>()
-  const navigate        = useNavigate()
+  const { id: albumId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
 
-  /*  state  */
-  const [photos,  setPhotos]  = useState<PhotoMeta[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState<string | null>(null)
+  /* state */
+  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [file,      setFile]      = useState<File | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [progress,  setProgress]  = useState(0)
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
-  const [isOpen,       setIsOpen]       = useState(false)
-  const [currentIndex, setCurrentIndex] = useState(0)
+  const [isOpen, setIsOpen] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const overlayRef = useAutoFocus(isOpen);               // ⬅ gets focus for Arrow keys
 
-  /*helpers for light‑box nav  */
+  /* helpers for light‑box nav */
   const prev = useCallback(
     () => setCurrentIndex(i => (i === 0 ? photos.length - 1 : i - 1)),
     [photos.length],
-  )
+  );
   const next = useCallback(
     () => setCurrentIndex(i => (i === photos.length - 1 ? 0 : i + 1)),
     [photos.length],
-  )
+  );
 
-  /* finger‑tracking for plain touch events */
-  const touchX = useRef<number | null>(null)
+  /* finger‑tracking for “raw” touch events */
+  const touchX = useRef<number | null>(null);
 
-  /* react‑swipeable (handles touch pads + mouse drag) */
+  /* react‑swipeable (covers touch‑pads & mouse‑drag) */
   const swipeHandlers = useSwipeable({
-    onSwipedLeft : next,
+    onSwipedLeft: next,
     onSwipedRight: prev,
-    trackMouse   : true,
-  })
+    trackMouse: true,
+  });
 
-  /* = initial load */
+  /* initial load */
   useEffect(() => {
-    if (!localStorage.getItem('token')) { navigate('/login'); return }
-    fetchPhotos()
-  }, [albumId])
+    if (!localStorage.getItem('token')) {
+      navigate('/login');
+      return;
+    }
+    fetchPhotos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [albumId]);
 
   async function fetchPhotos() {
-    setLoading(true)
+    setLoading(true);
     try {
       const r = await api.get<{ items: PhotoMeta[] }>('/photos/', {
         params: { album_id: albumId, limit: 100 },
-      })
-      setPhotos(r.data.items)
+      });
+      setPhotos(r.data.items);
     } catch (e: any) {
-      setError('Failed to load photos')
+      setError('Failed to load photos');
       if (e.response?.status === 401) {
-        localStorage.removeItem('token')
-        navigate('/login')
+        localStorage.removeItem('token');
+        navigate('/login');
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
-  /* upload  */
+  /* upload */
   const onSelect = (e: ChangeEvent<HTMLInputElement>) =>
-    setFile(e.target.files?.[0] ?? null)
+    setFile(e.target.files?.[0] ?? null);
 
   async function onUpload(e: FormEvent) {
-    e.preventDefault()
-    if (!file) return
-    const data = new FormData()
-    data.append('file', file)
+    e.preventDefault();
+    if (!file) return;
+    const data = new FormData();
+    data.append('file', file);
 
-    setUploading(true)
-    setProgress(0)
+    setUploading(true);
+    setProgress(0);
     try {
       await api.post('/photos/', data, {
-        params:   { album_id: albumId },
-        headers:  { 'Content-Type': 'multipart/form-data' },
+        params: { album_id: albumId },
+        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: ev =>
-          setProgress(Math.round((ev.loaded / ev.total!) * 100)),
-      })
-      setFile(null)
-      fetchPhotos()
+          setProgress(Math.round((ev.loaded / (ev.total ?? 1)) * 100)),
+      });
+      setFile(null);
+      fetchPhotos();
     } catch {
-      alert('Upload failed')
+      alert('Upload failed');
     } finally {
-      setUploading(false)
+      setUploading(false);
     }
   }
 
-  /*  delete  */
+  /* delete */
   async function deletePhoto(photo_id: string) {
-    if (!confirm('Delete this photo?')) return
+    if (!confirm('Delete this photo?')) return;
     try {
-      await api.delete(`/photos/${photo_id}`)
-      fetchPhotos()
+      await api.delete(`/photos/${photo_id}`);
+      fetchPhotos();
     } catch (e: any) {
-      alert(e.response?.data?.detail || 'Delete failed')
+      alert(e.response?.data?.detail || 'Delete failed');
       if (e.response?.status === 401) {
-        localStorage.removeItem('token')
-        navigate('/login')
+        localStorage.removeItem('token');
+        navigate('/login');
       }
     }
   }
 
-  /*  UI  */
-  if (loading) return <p className="p-8">Loading photos…</p>
-  if (error)   return <p className="p-8 text-red-600">{error}</p>
+  /* UI */
+  if (loading) return <p className="p-8">Loading photos…</p>;
+  if (error) return <p className="p-8 text-red-600">{error}</p>;
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
@@ -148,7 +162,10 @@ export default function AlbumPage() {
               src={p.url}
               alt=""
               className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
-              onClick={() => { setCurrentIndex(i); setIsOpen(true) }}
+              onClick={() => {
+                setCurrentIndex(i);
+                setIsOpen(true);
+              }}
             />
             <button
               onClick={() => deletePhoto(p.photo_id)}
@@ -163,18 +180,19 @@ export default function AlbumPage() {
       {/* light‑box */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          ref={overlayRef}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 outline-none"
           onClick={() => setIsOpen(false)}
           tabIndex={0}
           onKeyDown={e => {
-            if (e.key === 'ArrowLeft')  prev()
-            if (e.key === 'ArrowRight') next()
-            if (e.key === 'Escape')     setIsOpen(false)
+            if (e.key === 'ArrowLeft') prev();
+            if (e.key === 'ArrowRight') next();
+            if (e.key === 'Escape') setIsOpen(false);
           }}
           onTouchStart={e => (touchX.current = e.touches[0].clientX)}
           onTouchEnd={e => {
-            const dx = e.changedTouches[0].clientX - (touchX.current ?? 0)
-            if (Math.abs(dx) > 40) (dx > 0 ? prev() : next())
+            const dx = e.changedTouches[0].clientX - (touchX.current ?? 0);
+            if (Math.abs(dx) > 40) (dx > 0 ? prev() : next());
           }}
           {...swipeHandlers}
         >
@@ -187,5 +205,5 @@ export default function AlbumPage() {
         </div>
       )}
     </div>
-  )
+  );
 }
