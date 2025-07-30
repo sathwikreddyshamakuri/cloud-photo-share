@@ -1,6 +1,5 @@
-// cloud-photo-ui/src/pages/Albums.tsx
-import { useEffect, useState } from 'react';
-import type { FormEvent } from 'react';
+// src/pages/Albums.tsx
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { ClipboardDocumentIcon } from '@heroicons/react/24/solid';
@@ -18,10 +17,10 @@ interface Album {
 export default function AlbumsPage() {
   const navigate = useNavigate();
 
-  const [albums,      setAlbums]    = useState<Album[]>([]);
-  const [filtered,    setFiltered]  = useState<Album[]>([]);
-  const [loading,     setLoading]   = useState(true);
-  const [error,       setError]     = useState<string | null>(null);
+  const [albums,      setAlbums]     = useState<Album[]>([]);
+  const [filtered,    setFiltered]   = useState<Album[]>([]);
+  const [loading,     setLoading]    = useState(true);
+  const [error,       setError]      = useState<string | null>(null);
 
   const [searchTerm,  setSearchTerm] = useState('');
   const [creating,    setCreating]   = useState(false);
@@ -30,7 +29,7 @@ export default function AlbumsPage() {
   const [renamingId,  setRenaming]   = useState<string | null>(null);
   const [renameTitle, setRename]     = useState('');
 
-  /*  initial load  */
+  /* ─── initial load ─── */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
       navigate('/login', { replace: true });
@@ -42,7 +41,6 @@ export default function AlbumsPage() {
 
   async function fetchAlbums() {
     setLoading(true);
-    setError(null);
     try {
       const { data } = await api.get<{ items: Album[] }>('/albums/');
       setAlbums(data.items);
@@ -59,13 +57,13 @@ export default function AlbumsPage() {
     }
   }
 
-  /*  search filter  */
+  /* ─── search filter ─── */
   useEffect(() => {
     const term = searchTerm.trim().toLowerCase();
     setFiltered(albums.filter(a => a.title.toLowerCase().includes(term)));
   }, [searchTerm, albums]);
 
-  /*  create  */
+  /* ─── create ─── */
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     const title = newTitle.trim();
@@ -83,7 +81,7 @@ export default function AlbumsPage() {
     }
   }
 
-  /*  rename  */
+  /* ─── rename ─── */
   async function handleRename(e: FormEvent) {
     e.preventDefault();
     if (!renamingId) return;
@@ -101,7 +99,7 @@ export default function AlbumsPage() {
     }
   }
 
-  /*  delete  */
+  /* ─── delete ─── */
   async function handleDelete(id: string) {
     if (!confirm('Delete this album?')) return;
     try {
@@ -115,28 +113,37 @@ export default function AlbumsPage() {
     }
   }
 
-  /*  render */
+  /* ─── render guards ─── */
   if (loading) return <p className="p-8">Loading albums…</p>;
   if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
+  /* ─── UI ─── */
   return (
     <div className="p-8 bg-slate-50 dark:bg-slate-800 min-h-screen text-slate-900 dark:text-slate-100">
       {/* top bar */}
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center space-x-2">
           <ThemeToggle />
-          <button onClick={() => navigate('/profile')}
-                  className="rounded bg-gray-200 px-3 py-1 hover:bg-gray-300">
+          <button
+            onClick={() => navigate('/profile')}
+            className="rounded bg-gray-200 px-3 py-1 hover:bg-gray-300"
+          >
             Profile
           </button>
-          <button onClick={() => { localStorage.removeItem('token'); navigate('/login', { replace:true }); }}
-                  className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400">
+          <button
+            onClick={() => { localStorage.removeItem('token'); navigate('/login', { replace:true }); }}
+            className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
+          >
             Logout
           </button>
         </div>
-        <h1 className="text-3xl font-bold">Your Albums</h1>
-        <button onClick={() => setCreating(true)}
-                className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500">
+
+        <h1 className="text-3xl font-bold text-center">Your Albums</h1>
+
+        <button
+          onClick={() => setCreating(true)}
+          className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500"
+        >
           + New Album
         </button>
       </div>
@@ -170,7 +177,6 @@ export default function AlbumsPage() {
 
             {/* action buttons */}
             <div className="absolute top-2 right-2 flex space-x-1">
-              {/* copy link */}
               <button
                 onClick={() => {
                   const url = `${window.location.origin}/albums/${alb.album_id}`;
@@ -183,13 +189,16 @@ export default function AlbumsPage() {
                 <ClipboardDocumentIcon className="h-4 w-4" />
               </button>
 
-              {/* rename / delete */}
-              <button onClick={() => { setRenaming(alb.album_id); setRename(alb.title); }}
-                      className="rounded bg-white p-1 text-gray-600 hover:bg-gray-100">
+              <button
+                onClick={() => { setRenaming(alb.album_id); setRename(alb.title); }}
+                className="rounded bg-white p-1 text-gray-600 hover:bg-gray-100"
+              >
                 ✏️
               </button>
-              <button onClick={() => handleDelete(alb.album_id)}
-                      className="rounded bg-white p-1 text-red-600 hover:bg-red-100">
+              <button
+                onClick={() => handleDelete(alb.album_id)}
+                className="rounded bg-white p-1 text-red-600 hover:bg-red-100"
+              >
                 🗑️
               </button>
             </div>
@@ -197,17 +206,25 @@ export default function AlbumsPage() {
         ))}
       </div>
 
-      {/* create modal */}
+      {/* ── create modal ── */}
       {creating && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50"
-             onClick={() => setCreating(false)}>
-          <form onSubmit={handleCreate}
-                className="bg-white p-6 rounded shadow-lg w-80"
-                onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50"
+          onClick={() => setCreating(false)}
+        >
+          <form
+            onSubmit={handleCreate}
+            className="bg-white p-6 rounded shadow-lg w-80"
+            onClick={e => e.stopPropagation()}
+          >
             <h2 className="text-xl font-semibold mb-4">New Album</h2>
-            <input value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                   placeholder="Album title" required
-                   className="w-full border p-2 rounded mb-4" />
+            <input
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              placeholder="Album title"
+              required
+              className="w-full border p-2 rounded mb-4"
+            />
             <div className="flex justify-end space-x-2">
               <button type="button" onClick={() => setCreating(false)} className="px-4 py-2">Cancel</button>
               <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500">Create</button>
@@ -216,16 +233,24 @@ export default function AlbumsPage() {
         </div>
       )}
 
-      {/* rename modal */}
+      {/* ── rename modal ── */}
       {renamingId && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/50"
-             onClick={() => setRenaming(null)}>
-          <form onSubmit={handleRename}
-                className="bg-white p-6 rounded shadow-lg w-80"
-                onClick={e => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black/50"
+          onClick={() => setRenaming(null)}
+        >
+          <form
+            onSubmit={handleRename}
+            className="bg-white p-6 rounded shadow-lg w-80"
+            onClick={e => e.stopPropagation()}
+          >
             <h2 className="text-xl font-semibold mb-4">Rename Album</h2>
-            <input value={renameTitle} onChange={e => setRename(e.target.value)}
-                   className="w-full border p-2 rounded mb-4" required />
+            <input
+              value={renameTitle}
+              onChange={e => setRename(e.target.value)}
+              required
+              className="w-full border p-2 rounded mb-4"
+            />
             <div className="flex justify-end space-x-2">
               <button type="button" onClick={() => setRenaming(null)} className="px-4 py-2">Cancel</button>
               <button type="submit" className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-500">Save</button>
