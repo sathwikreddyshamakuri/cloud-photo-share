@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'   // 
+// cloud-photo-ui/src/pages/Album.tsx
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useSwipeable } from 'react-swipeable'
@@ -16,7 +17,7 @@ export default function AlbumPage() {
   const { id: albumId } = useParams<{ id: string }>()
   const navigate        = useNavigate()
 
-  /* state */
+  /*  state  */
   const [photos,  setPhotos]  = useState<PhotoMeta[]>([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
@@ -28,7 +29,7 @@ export default function AlbumPage() {
   const [isOpen,       setIsOpen]       = useState(false)
   const [currentIndex, setCurrentIndex] = useState(0)
 
-  /* helpers reused by keys + swipe */
+  /*helpers for light‑box nav  */
   const prev = useCallback(
     () => setCurrentIndex(i => (i === 0 ? photos.length - 1 : i - 1)),
     [photos.length],
@@ -38,17 +39,17 @@ export default function AlbumPage() {
     [photos.length],
   )
 
-  /* track finger x‑coord for vanilla touch events */
+  /* finger‑tracking for plain touch events */
   const touchX = useRef<number | null>(null)
 
-  /* swipe‑library hook for desktop touchpads / mobile */
+  /* react‑swipeable (handles touch pads + mouse drag) */
   const swipeHandlers = useSwipeable({
     onSwipedLeft : next,
     onSwipedRight: prev,
     trackMouse   : true,
   })
 
-  /* load photos once album id available */
+  /* = initial load */
   useEffect(() => {
     if (!localStorage.getItem('token')) { navigate('/login'); return }
     fetchPhotos()
@@ -72,26 +73,99 @@ export default function AlbumPage() {
     }
   }
 
-  /* …  upload / delete code unchanged … */
+  /* upload  */
+  const onSelect = (e: ChangeEvent<HTMLInputElement>) =>
+    setFile(e.target.files?.[0] ?? null)
 
-  /* ─────── UI ─────── */
+  async function onUpload(e: FormEvent) {
+    e.preventDefault()
+    if (!file) return
+    const data = new FormData()
+    data.append('file', file)
+
+    setUploading(true)
+    setProgress(0)
+    try {
+      await api.post('/photos/', data, {
+        params:   { album_id: albumId },
+        headers:  { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: ev =>
+          setProgress(Math.round((ev.loaded / ev.total!) * 100)),
+      })
+      setFile(null)
+      fetchPhotos()
+    } catch {
+      alert('Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  /*  delete  */
+  async function deletePhoto(photo_id: string) {
+    if (!confirm('Delete this photo?')) return
+    try {
+      await api.delete(`/photos/${photo_id}`)
+      fetchPhotos()
+    } catch (e: any) {
+      alert(e.response?.data?.detail || 'Delete failed')
+      if (e.response?.status === 401) {
+        localStorage.removeItem('token')
+        navigate('/login')
+      }
+    }
+  }
+
+  /*  UI  */
   if (loading) return <p className="p-8">Loading photos…</p>
   if (error)   return <p className="p-8 text-red-600">{error}</p>
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
       <h1 className="mb-4 text-2xl font-bold">Album Photos</h1>
-      <Link to="/albums" className="text-blue-500 hover:underline">← Back to albums</Link>
+      <Link to="/albums" className="text-blue-500 hover:underline">
+        ← Back to albums
+      </Link>
 
-      {/* upload form – unchanged */}
-      {/* photo grid – unchanged */}
+      {/* upload */}
+      <form onSubmit={onUpload} className="my-4 flex items-center space-x-2">
+        <input type="file" onChange={onSelect} className="border rounded p-1" />
+        <button
+          type="submit"
+          disabled={!file || uploading}
+          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-500 disabled:opacity-50"
+        >
+          {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+        {uploading && <span className="ml-4">{progress}%</span>}
+      </form>
+
+      {/* grid */}
+      <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        {photos.map((p, i) => (
+          <div key={p.photo_id} className="relative">
+            <img
+              src={p.url}
+              alt=""
+              className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
+              onClick={() => { setCurrentIndex(i); setIsOpen(true) }}
+            />
+            <button
+              onClick={() => deletePhoto(p.photo_id)}
+              className="absolute top-1 right-1 bg-white text-red-600 rounded p-1 hover:bg-red-100"
+            >
+              🗑️
+            </button>
+          </div>
+        ))}
+      </div>
 
       {/* light‑box */}
       {isOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
           onClick={() => setIsOpen(false)}
-          tabIndex={0}                                // receive key events
+          tabIndex={0}
           onKeyDown={e => {
             if (e.key === 'ArrowLeft')  prev()
             if (e.key === 'ArrowRight') next()
@@ -102,13 +176,13 @@ export default function AlbumPage() {
             const dx = e.changedTouches[0].clientX - (touchX.current ?? 0)
             if (Math.abs(dx) > 40) (dx > 0 ? prev() : next())
           }}
-          {...swipeHandlers}                          // 📱/🖱️ swipe
+          {...swipeHandlers}
         >
           <img
             src={photos[currentIndex].url}
             alt={`Photo ${currentIndex + 1}`}
             className="max-h-full max-w-full rounded-lg shadow-lg"
-            onClick={e => e.stopPropagation()}        // don’t close on image tap
+            onClick={e => e.stopPropagation()} /* don’t close on img tap */
           />
         </div>
       )}
