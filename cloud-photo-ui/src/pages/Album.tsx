@@ -39,7 +39,7 @@ function mergeRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
   };
 }
 
-/* ─────────────────────────────────────────────────────────── */
+
 export default function AlbumPage() {
   const { id: albumId } = useParams<{ id: string }>();
   const navigate = useNavigate();
