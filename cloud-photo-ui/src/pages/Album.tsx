@@ -1,70 +1,87 @@
 // cloud-photo-ui/src/pages/Album.tsx
-import { useState, useEffect, useCallback, useRef } from 'react';
-import type { ChangeEvent, FormEvent } from 'react';
+import React, {
+  useState, useEffect, useCallback, useRef,
+  type ChangeEvent, type FormEvent,
+} from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useSwipeable } from 'react-swipeable';
 import api from '../lib/api';
 
 interface PhotoMeta {
-  photo_id: string;
-  album_id: string;
-  s3_key: string;
+  photo_id:    string;
+  album_id:    string;
+  s3_key:      string;
   uploaded_at: number;
-  url: string;
+  url:         string;
 }
 
-/* ─────────── custom hook (hoisted) ─────────── */
+/* --- helpers -------------------------------------------------------------- */
+
+// focus the element whenever the light‑box opens
 function useAutoFocus(enabled: boolean) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (enabled) ref.current?.focus();
-  }, [enabled]);
+  useEffect(() => { if (enabled) ref.current?.focus(); }, [enabled]);
   return ref;
 }
 
+// merge any number of refs into one callback‑ref
+function mergeRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
+  return (node: T | null) => {
+    refs.forEach(r => {
+      if (!r) return;
+      if (typeof r === 'function')      r(node);
+      else (r as React.MutableRefObject<T | null>).current = node;
+    });
+  };
+}
+
+/* --- main component ------------------------------------------------------- */
 export default function AlbumPage() {
   const { id: albumId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const navigate        = useNavigate();
 
   /* state */
-  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [file, setFile] = useState<File | null>(null);
+  const [photos,    setPhotos]    = useState<PhotoMeta[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState<string | null>(null);
+  const [file,      setFile]      = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [progress,  setProgress]  = useState(0);
 
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen,       setIsOpen]       = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const overlayRef = useAutoFocus(isOpen);               // ⬅ gets focus for Arrow keys
 
-  /* helpers for light‑box nav */
+  /* light‑box navigation */
   const prev = useCallback(
     () => setCurrentIndex(i => (i === 0 ? photos.length - 1 : i - 1)),
-    [photos.length],
+    [photos.length]
   );
   const next = useCallback(
     () => setCurrentIndex(i => (i === photos.length - 1 ? 0 : i + 1)),
-    [photos.length],
+    [photos.length]
   );
 
-  /* finger‑tracking for “raw” touch events */
+  /* touch helpers */
   const touchX = useRef<number | null>(null);
 
-  /* react‑swipeable (covers touch‑pads & mouse‑drag) */
+  /* swipeable (adds its own ref) */
   const swipeHandlers = useSwipeable({
-    onSwipedLeft: next,
+    onSwipedLeft : next,
     onSwipedRight: prev,
-    trackMouse: true,
+    trackMouse   : true,
   });
+  const { ref: swipeRef, ...swipeProps } = swipeHandlers;   // separate its ref
 
+  /* auto‑focus ref */
+  const focusRef = useAutoFocus(isOpen);
+
+  /* merged ref passed to overlay */
+  const combinedRef = mergeRefs(focusRef, swipeRef);
+
+  /* ----------------------------------------------------------------------- */
   /* initial load */
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
-      navigate('/login');
-      return;
-    }
+    if (!localStorage.getItem('token')) { navigate('/login'); return; }
     fetchPhotos();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [albumId]);
@@ -94,14 +111,14 @@ export default function AlbumPage() {
   async function onUpload(e: FormEvent) {
     e.preventDefault();
     if (!file) return;
+
     const data = new FormData();
     data.append('file', file);
-
     setUploading(true);
     setProgress(0);
     try {
       await api.post('/photos/', data, {
-        params: { album_id: albumId },
+        params:  { album_id: albumId },
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: ev =>
           setProgress(Math.round((ev.loaded / (ev.total ?? 1)) * 100)),
@@ -132,14 +149,12 @@ export default function AlbumPage() {
 
   /* UI */
   if (loading) return <p className="p-8">Loading photos…</p>;
-  if (error) return <p className="p-8 text-red-600">{error}</p>;
+  if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
   return (
     <div className="p-8 bg-slate-50 min-h-screen">
       <h1 className="mb-4 text-2xl font-bold">Album Photos</h1>
-      <Link to="/albums" className="text-blue-500 hover:underline">
-        ← Back to albums
-      </Link>
+      <Link to="/albums" className="text-blue-500 hover:underline">← Back to albums</Link>
 
       {/* upload */}
       <form onSubmit={onUpload} className="my-4 flex items-center space-x-2">
@@ -162,10 +177,7 @@ export default function AlbumPage() {
               src={p.url}
               alt=""
               className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
-              onClick={() => {
-                setCurrentIndex(i);
-                setIsOpen(true);
-              }}
+              onClick={() => { setCurrentIndex(i); setIsOpen(true); }}
             />
             <button
               onClick={() => deletePhoto(p.photo_id)}
@@ -180,27 +192,27 @@ export default function AlbumPage() {
       {/* light‑box */}
       {isOpen && (
         <div
-          ref={overlayRef}
+          ref={combinedRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 outline-none"
           onClick={() => setIsOpen(false)}
           tabIndex={0}
           onKeyDown={e => {
-            if (e.key === 'ArrowLeft') prev();
+            if (e.key === 'ArrowLeft')  prev();
             if (e.key === 'ArrowRight') next();
-            if (e.key === 'Escape') setIsOpen(false);
+            if (e.key === 'Escape')     setIsOpen(false);
           }}
           onTouchStart={e => (touchX.current = e.touches[0].clientX)}
           onTouchEnd={e => {
             const dx = e.changedTouches[0].clientX - (touchX.current ?? 0);
             if (Math.abs(dx) > 40) (dx > 0 ? prev() : next());
           }}
-          {...swipeHandlers}
+          {...swipeProps}          {/* swipe without conflicting ref */}
         >
           <img
             src={photos[currentIndex].url}
             alt={`Photo ${currentIndex + 1}`}
             className="max-h-full max-w-full rounded-lg shadow-lg"
-            onClick={e => e.stopPropagation()} /* don’t close on img tap */
+            onClick={e => e.stopPropagation()}      // don’t close on img tap
           />
         </div>
       )}
