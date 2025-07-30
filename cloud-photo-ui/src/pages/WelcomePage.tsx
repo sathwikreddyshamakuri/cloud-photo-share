@@ -21,7 +21,7 @@ export default function WelcomePage() {
         className="max-h-[60vh] rounded-lg shadow-lg"
       />
       <p className="mt-6 text-xl font-semibold animate-pulse">
-        Welcome to Cloud Photo‑Share
+        Welcome to Your Private Cloud
       </p>
     </div>
   );
