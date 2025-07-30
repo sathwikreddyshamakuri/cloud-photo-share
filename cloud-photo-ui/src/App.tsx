@@ -1,26 +1,32 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, Fragment } from 'react';
 import { Toaster } from 'react-hot-toast';
 
-import LoginPage           from './pages/LoginPage';
-import SignupPage          from './pages/SignupPage';
-import ForgotPasswordPage  from './pages/ForgotPassword';
-import ResetPasswordPage   from './pages/ResetPassword';
-import VerifyEmailPage     from './pages/VerifyEmail';
-import AlbumsPage          from './pages/Albums';
-import WelcomePage         from './pages/WelcomePage';   
-import AlbumPage           from './pages/Album';
-import ProfilePage         from './pages/ProfilePage';
-  
+/* public-auth pages */
+import LoginPage          from './pages/LoginPage';
+import SignupPage         from './pages/SignupPage';
+import ForgotPasswordPage from './pages/ForgotPassword';
+import ResetPasswordPage  from './pages/ResetPassword';
+import VerifyEmailPage    from './pages/VerifyEmail';
+
+/* private pages */
+import WelcomePage  from './pages/WelcomePage';   // 5-sec intro (optional)
+import Dashboard    from './pages/Dashboard';
+import AlbumsPage   from './pages/Albums';
+import AlbumPage    from './pages/Album';
+import ProfilePage  from './pages/ProfilePage';
 
 function Router() {
-  const location = useLocation();
-  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const location       = useLocation();
+  const [token, setTok] = useState<string | null>(localStorage.getItem('token'));
 
-  useEffect(() => setToken(localStorage.getItem('token')), [location]);
+  /* update token on route change */
+  useEffect(() => setTok(localStorage.getItem('token')), [location]);
 
+  /* update token when we fire manual “token-change” events */
   useEffect(() => {
-    const h = () => setToken(localStorage.getItem('token'));
+    const h = () => setTok(localStorage.getItem('token'));
     window.addEventListener('token-change', h);
     return () => window.removeEventListener('token-change', h);
   }, []);
@@ -28,21 +34,24 @@ function Router() {
   return (
     <Fragment>
       <Routes>
-        {/* public */}
+        {/* ───── public routes ───── */}
         <Route path="/login"   element={token ? <Navigate to="/albums" replace /> : <LoginPage />} />
         <Route path="/signup"  element={token ? <Navigate to="/albums" replace /> : <SignupPage />} />
         <Route path="/forgot"  element={token ? <Navigate to="/albums" replace /> : <ForgotPasswordPage />} />
         <Route path="/reset"   element={token ? <Navigate to="/albums" replace /> : <ResetPasswordPage />} />
         <Route path="/verify"  element={token ? <Navigate to="/albums" replace /> : <VerifyEmailPage />} />
 
-        {/* private */}
-        <Route path="/welcome"   element={token ? <WelcomePage /> : <Navigate to="/login" replace />} />
-        <Route path="/albums"     element={token ? <AlbumsPage /> : <Navigate to="/login" replace />} />
-        <Route path="/albums/:id" element={token ? <AlbumPage  /> : <Navigate to="/login" replace />} />
-        <Route path="/profile"    element={token ? <ProfilePage /> : <Navigate to="/login" replace />} />
+        {/* ───── private routes (require JWT) ───── */}
+        <Route path="/welcome"   element={token ? <WelcomePage  /> : <Navigate to="/login" replace />} />
+        <Route path="/dashboard" element={token ? <Dashboard    /> : <Navigate to="/login" replace />} />
+        <Route path="/albums"    element={token ? <AlbumsPage   /> : <Navigate to="/login" replace />} />
+        <Route path="/albums/:id"
+               element={token ? <AlbumPage    /> : <Navigate to="/login" replace />} />
+        <Route path="/profile"   element={token ? <ProfilePage  /> : <Navigate to="/login" replace />} />
 
-        {/* fallback */}
-        <Route path="*" element={<Navigate to={token ? '/albums' : '/login'} replace />} />
+        {/* catch-all */}
+        <Route path="*"
+               element={<Navigate to={token ? '/albums' : '/login'} replace />} />
       </Routes>
 
       {/* global toaster */}
