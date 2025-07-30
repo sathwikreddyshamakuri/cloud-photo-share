@@ -1,6 +1,6 @@
 // src/pages/Album.tsx
 import {
-  useState, useEffect, useRef, useCallback,
+  useState, useEffect,
   type ChangeEvent, type FormEvent
 } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
