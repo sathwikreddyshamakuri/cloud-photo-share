@@ -1,12 +1,11 @@
 // cloud-photo-ui/src/pages/LoginPage.tsx
-import { useState } from 'react';
-import type { FormEvent } from 'react';
+import { useState, FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
 export default function LoginPage() {
-  const navigate          = useNavigate();
-  const loc                = useLocation();
+  const navigate   = useNavigate();
+  const loc        = useLocation();
   const flashMsg: string | undefined = (loc.state as any)?.msg;
 
   const [email,    setEmail]    = useState('');
@@ -16,10 +15,20 @@ export default function LoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
     try {
-      await api.post('/login', { email, password });
-      navigate('/welcome', { replace: true });
+      /* ---- hit API ---- */
+      const { data } = await api.post<{ access_token: string }>('/login', {
+        email,
+        password,
+      });
+
+      /* ---- store token & notify app ---- */
+      localStorage.setItem('token', data.access_token);
       window.dispatchEvent(new Event('token-change'));
+
+      /* ---- go to main app ---- */
+      navigate('/albums', { replace: true });
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
@@ -36,9 +45,8 @@ export default function LoginPage() {
 
         {/* body */}
         <div className="p-8 flex flex-col items-center space-y-6">
-          {/* logo */}
           <img
-            src="/nuagevault-logo.svg"
+            src="/nuagevault-logo.svg"   /* or .png if that’s what you uploaded */
             alt="NuageVault"
             className="h-16 w-16 rounded shadow-sm"
           />
