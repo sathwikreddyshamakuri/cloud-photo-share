@@ -1,28 +1,25 @@
 // cloud-photo-ui/src/pages/SignupPage.tsx
-import { useState, useEffect, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import api from '../lib/api';
+import { useState, type FormEvent } from 'react';
+import { Link, useNavigate }        from 'react-router-dom';
+import api                           from '../lib/api';
 
-type RegisterResp = {
+/* ------------------------------------------------------------------ */
+/* API response shape */
+interface RegisterResp {
   user_id:     string;
   email_sent:  boolean;
   need_verify: boolean;
-};
+}
 
 export default function SignupPage() {
   const navigate = useNavigate();
 
-  /* redirect if already logged-in */
-  useEffect(() => {
-    if (localStorage.getItem('token')) {
-      navigate('/albums', { replace: true });
-    }
-  }, [navigate]);
-
+  /* form state */
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState<string | null>(null);
 
+  /* submit handler */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -40,7 +37,7 @@ export default function SignupPage() {
           },
         });
       } else {
-        /* AUTO_VERIFY_USERS=1 path */
+        // AUTO_VERIFY_USERS=1 path
         navigate('/albums', { replace: true });
       }
     } catch (err: any) {
@@ -48,12 +45,17 @@ export default function SignupPage() {
     }
   }
 
+  /* ------------------------------------------------------------------ */
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
       {/* brand header */}
       <div className="flex flex-col items-center mb-6">
         {/* logo lives in /public so it’s served at the root */}
-        <img src="/nuagevault-logo.png" alt="NuageVault" className="h-12 w-auto" />
+        <img
+          src="/nuagevault-logo.png"
+          alt="NuageVault logo"
+          className="h-12 w-auto"
+        />
         <h2 className="text-xl font-semibold mt-2">Create your vault account</h2>
       </div>
 
