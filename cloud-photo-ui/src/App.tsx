@@ -1,4 +1,4 @@
-// cloud-photo-ui/src/App.tsx
+// src/App.tsx
 import {
   BrowserRouter,
   Routes,
@@ -9,7 +9,7 @@ import {
 import { useEffect, useState, Fragment } from 'react';
 import { Toaster } from 'react-hot-toast';
 
-/* ── public-auth pages ── */
+/*  public-auth pages  */
 import LandingPage        from './pages/LandingPage';
 import LoginPage          from './pages/LoginPage';
 import SignupPage         from './pages/SignupPage';
@@ -17,25 +17,27 @@ import ForgotPasswordPage from './pages/ForgotPassword';
 import ResetPasswordPage  from './pages/ResetPassword';
 import VerifyEmailPage    from './pages/VerifyEmail';
 
-/* ── private pages ── */
+/*  private pages  */
 import WelcomePage  from './pages/WelcomePage';
 import Dashboard    from './pages/Dashboard';
 import AlbumsPage   from './pages/Albums';
 import AlbumPage    from './pages/Album';
 import ProfilePage  from './pages/ProfilePage';
 
+
+
 function Router() {
-  const location          = useLocation();
+  const location = useLocation();
   const [token, setToken] = useState<string | null>(
     localStorage.getItem('token')
   );
 
-  /* refresh token when route changes */
+  /* refresh token whenever the URL changes */
   useEffect(() => {
     setToken(localStorage.getItem('token'));
   }, [location]);
 
-  /* listen for manual “token-change” events (logout, login, etc.) */
+  /* refresh token when we fire a manual “token-change” event */
   useEffect(() => {
     const handler = () => setToken(localStorage.getItem('token'));
     window.addEventListener('token-change', handler);
@@ -45,61 +47,44 @@ function Router() {
   return (
     <Fragment>
       <Routes>
-        {/* ───── public routes ───── */}
-        <Route
-          path="/"
-          element={token ? <Navigate to="/albums" replace /> : <LandingPage />}
-        />
-        <Route
-          path="/login"
-          element={token ? <Navigate to="/albums" replace /> : <LoginPage />}
-        />
-        <Route
-          path="/signup"
-          element={token ? <Navigate to="/albums" replace /> : <SignupPage />}
-        />
-        <Route
-          path="/forgot"
-          element={
-            token ? <Navigate to="/albums" replace /> : <ForgotPasswordPage />
-          }
-        />
-        <Route
-          path="/reset"
-          element={token ? <Navigate to="/albums" replace /> : <ResetPasswordPage />}
-        />
-        <Route
-          path="/verify"
-          element={token ? <Navigate to="/albums" replace /> : <VerifyEmailPage />}
-        />
+        {/*  public routes  */}
+        <Route path="/"
+               element={token ? <Navigate to="/albums" replace /> : <LandingPage />} />
 
-        {/* ───── private routes ───── */}
-        <Route
-          path="/welcome"
-          element={token ? <WelcomePage /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/dashboard"
-          element={token ? <Dashboard /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/albums"
-          element={token ? <AlbumsPage /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/albums/:id"
-          element={token ? <AlbumPage /> : <Navigate to="/login" replace />}
-        />
-        <Route
-          path="/profile"
-          element={token ? <ProfilePage /> : <Navigate to="/login" replace />}
-        />
+        <Route path="/login"
+               element={token ? <Navigate to="/albums" replace /> : <LoginPage />} />
 
-        {/* fallback */}
-        <Route
-          path="*"
-          element={<Navigate to={token ? '/albums' : '/login'} replace />}
-        />
+        <Route path="/signup"
+               element={token ? <Navigate to="/albums" replace /> : <SignupPage />} />
+
+        <Route path="/forgot"
+               element={token ? <Navigate to="/albums" replace /> : <ForgotPasswordPage />} />
+
+        <Route path="/reset"
+               element={token ? <Navigate to="/albums" replace /> : <ResetPasswordPage />} />
+
+        <Route path="/verify"
+               element={token ? <Navigate to="/albums" replace /> : <VerifyEmailPage />} />
+
+        {/*  private routes  */}
+        <Route path="/welcome"
+               element={token ? <WelcomePage />  : <Navigate to="/login" replace />} />
+
+        <Route path="/dashboard"
+               element={token ? <Dashboard />    : <Navigate to="/login" replace />} />
+
+        <Route path="/albums"
+               element={token ? <AlbumsPage />   : <Navigate to="/login" replace />} />
+
+        <Route path="/albums/:id"
+               element={token ? <AlbumPage />    : <Navigate to="/login" replace />} />
+
+        <Route path="/profile"
+               element={token ? <ProfilePage />  : <Navigate to="/login" replace />} />
+
+        {/*  fallback */}
+        <Route path="*"
+               element={<Navigate to={token ? '/albums' : '/login'} replace />} />
       </Routes>
 
       {/* global toast notifications */}
@@ -107,6 +92,7 @@ function Router() {
     </Fragment>
   );
 }
+
 
 export default function App() {
   return (
