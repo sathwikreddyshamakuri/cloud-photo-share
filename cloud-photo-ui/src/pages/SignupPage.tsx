@@ -1,17 +1,23 @@
 // cloud-photo-ui/src/pages/SignupPage.tsx
-import { useState } from 'react';
-import type { FormEvent } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api';
 
 type RegisterResp = {
-  user_id:      string;
-  email_sent:   boolean;
-  need_verify:  boolean;
+  user_id:     string;
+  email_sent:  boolean;
+  need_verify: boolean;
 };
 
 export default function SignupPage() {
   const navigate = useNavigate();
+
+  /* redirect if already logged-in */
+  useEffect(() => {
+    if (localStorage.getItem('token')) {
+      navigate('/albums', { replace: true });
+    }
+  }, [navigate]);
 
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +26,7 @@ export default function SignupPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
     try {
       const { data } = await api.post<RegisterResp>('/register', { email, password });
 
@@ -33,7 +40,7 @@ export default function SignupPage() {
           },
         });
       } else {
-        // AUTO_VERIFY_USERS=1 path
+        /* AUTO_VERIFY_USERS=1 path */
         navigate('/albums', { replace: true });
       }
     } catch (err: any) {
@@ -46,7 +53,7 @@ export default function SignupPage() {
       {/* brand header */}
       <div className="flex flex-col items-center mb-6">
         {/* logo lives in /public so it’s served at the root */}
-        <img src="/nuagevault-logo.svg" alt="NuageVault" className="h-12 w-auto" />
+        <img src="/nuagevault-logo.png" alt="NuageVault" className="h-12 w-auto" />
         <h2 className="text-xl font-semibold mt-2">Create your vault account</h2>
       </div>
 
