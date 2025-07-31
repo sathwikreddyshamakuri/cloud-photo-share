@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api';
+import logo from '../assets/nuagevault-logo.svg';
 
 type RegisterResp = {
   user_id: string;
@@ -43,7 +44,11 @@ export default function SignupPage() {
   return (
     <div className="flex items-center justify-center h-screen bg-gray-100">
       <form onSubmit={onSubmit} className="bg-white p-6 rounded shadow-md w-80">
-        <h2 className="text-xl font-semibold mb-4">Create Account</h2>
+        <div className="flex flex-col items-center mb-6">
+          <img src={logo} alt="NuageVault" className="h-12 w-auto" />
+          <h2 className="text-xl font-semibold mt-2">Login to your vault</h2>
+        </div>
+
         {error && <p className="text-red-500 mb-2">{error}</p>}
 
         <label className="block mb-2">

@@ -1,31 +1,50 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import logo from '../assets/nuagevault-logo.svg';
+
 
 export default function ResetPasswordPage() {
   const [sp] = useSearchParams();
   const token = sp.get('token') ?? '';
+  const navigate = useNavigate();
 
   const [pwd, setPwd] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setMsg(null);
+    setErr(null);
     try {
       await api.post('/auth/reset', { token, new_password: pwd });
-      setMsg('Password updated. You can now log in.');
-    } catch (err: any) {
-      setMsg(err.response?.data?.detail || 'Failed to reset');
+      setMsg('Password updated. Redirecting to login…');
+      setTimeout(() => navigate('/login'), 1200);
+    } catch (e: any) {
+      setErr(e.response?.data?.detail || 'Failed to reset');
     }
+  }
+
+  if (!token) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p>Missing token</p>
+      </div>
+    );
   }
 
   return (
     <div className="flex items-center justify-center h-screen bg-gray-100">
       <form onSubmit={submit} className="bg-white p-6 rounded shadow-md w-80">
-        <h2 className="text-xl font-semibold mb-4">Reset Password</h2>
-        {msg && <p className="mb-2">{msg}</p>}
+        <div className="flex flex-col items-center mb-6">
+            <img src={logo} alt="NuageVault" className="h-12 w-auto" />
+            <h2 className="text-xl font-semibold mt-2">Login to your vault</h2>
+        </div>
+
+        {msg && <p className="text-green-600 mb-2">{msg}</p>}
+        {err && <p className="text-red-600 mb-2">{err}</p>}
         <label className="block mb-4">
           New password
           <input
