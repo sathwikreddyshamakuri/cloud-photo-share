@@ -46,3 +46,13 @@ dist-ssr/
 # Byte-compiled / cache
 __pycache__/
 *.pyc
+
+# python
+*.pyc
+__pycache__/
+
+# node
+node_modules/
+
+# misc
+.DS_Store

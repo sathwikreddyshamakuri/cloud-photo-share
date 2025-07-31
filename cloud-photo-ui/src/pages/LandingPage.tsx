@@ -1,97 +1,104 @@
-// src/pages/LoginPage.tsx
-import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
-import api   from '../lib/api';
-
-interface LoginResp {
-  access_token: string;
-}
+// cloud-photo-ui/src/pages/LoginPage.tsx
+import { useState, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import api from '../lib/api';
+import logo from '../assets/nuagevault-logo.png';   // ✔ bundled path
 
 export default function LoginPage() {
+  const navigate = useNavigate();
+  const { state } = useLocation();
+  const flashMsg: string | undefined = (state as any)?.msg;
+
+  // ── redirect authenticated users straight to /albums ──
+  if (localStorage.getItem('token')) {
+    navigate('/albums', { replace: true });
+  }
+
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [error, setError]       = useState<string | null>(null);
-
-  const navigate  = useNavigate();
-  const location  = useLocation();                 // so we can read flash-msg
-  const flashMsg  = location.state?.msg as string | undefined;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
     try {
-      const { data } = await api.post<LoginResp>('/login', { email, password });
-
-      /* 1️⃣  persist token */
-      localStorage.setItem('token', data.access_token);
-
-      /* 2️⃣  notify router right away */
+      await api.post('/login', { email, password });
+      // login OK → show intro splash, then albums
+      navigate('/welcome', { replace: true });
       window.dispatchEvent(new Event('token-change'));
-
-      /* 3️⃣  redirect */
-      navigate('/welcome', { replace: true });     // or '/albums'
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Bad credentials');
+      setError(err.response?.data?.detail || 'Login failed');
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-      {/* logo / brand */}
-      <img src="/nuagevault-logo.png" alt="NuageVault" className="h-14 w-auto mb-6" />
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-800 p-4">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-md bg-white dark:bg-slate-700 rounded-lg shadow-lg overflow-hidden"
+      >
+        {/* top accent bar */}
+        <div className="h-2 bg-indigo-600" />
 
-      {/* optional flash message (e.g. “Email verified, please login”) */}
-      {flashMsg && (
-        <p className="mb-4 px-4 py-2 bg-green-100 text-green-700 rounded">
-          {flashMsg}
-        </p>
-      )}
+        <div className="p-8 flex flex-col items-center space-y-6">
+          <img src={logo} alt="NuageVault" className="h-16 w-16 rounded" />
 
-      <form onSubmit={onSubmit} className="bg-white shadow rounded p-6 w-full max-w-sm space-y-4">
-        <h2 className="text-xl font-semibold text-center">Log in</h2>
+          <h2 className="text-2xl font-semibold text-center">Log in</h2>
 
-        {error && <p className="text-red-500">{error}</p>}
+          {flashMsg && (
+            <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
+              {flashMsg}
+            </p>
+          )}
+          {error && (
+            <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
+              {error}
+            </p>
+          )}
 
-        <label className="block">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full border p-2 rounded mt-1"
-            required
-          />
-        </label>
+          <label className="w-full space-y-1">
+            <span className="text-sm">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
 
-        <label className="block">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="w-full border p-2 rounded mt-1"
-            required
-          />
-        </label>
+          <label className="w-full space-y-1">
+            <span className="text-sm">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
 
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-500"
-        >
-          Log In
-        </button>
+          <button
+            type="submit"
+            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition"
+          >
+            Log In
+          </button>
 
-        <div className="flex justify-between text-sm mt-2">
-          <Link to="/forgot" className="text-blue-600 hover:underline">
-            Forgot password?
-          </Link>
-          <Link to="/signup" className="text-blue-600 hover:underline">
-            Sign up
-          </Link>
+          <div className="flex justify-between w-full text-sm">
+            <Link to="/forgot" className="text-blue-600 hover:underline">
+              Forgot password?
+            </Link>
+            <span>
+              Need an account?{' '}
+              <Link to="/signup" className="text-blue-600 hover:underline">
+                Sign up
+              </Link>
+            </span>
+          </div>
         </div>
       </form>
-    </div>
+    </main>
   );
 }
