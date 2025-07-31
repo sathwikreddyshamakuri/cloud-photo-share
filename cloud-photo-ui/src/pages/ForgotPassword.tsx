@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import api from '../lib/api';
-import logo from '../assets/nuagevault-logo.svg';
+import logo from '../assets/nuagevault-logo.png';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
