@@ -1,84 +1,105 @@
+// cloud-photo-ui/src/pages/LoginPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useLocation, Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import logo from '../assets/nuagevault-logo.png';
-
 
 export default function LoginPage() {
-  const [email, setEmail]       = useState('');
+  const navigate          = useNavigate();
+  const loc                = useLocation();
+  const flashMsg: string | undefined = (loc.state as any)?.msg;
+
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
 
-  const location = useLocation();
-  const flashMsg = (location.state as any)?.msg ?? null;
-
-  const onSubmit = async (e: FormEvent) => {
+  async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      const res = await api.post('/login', { email, password });
-      localStorage.setItem('token', res.data.access_token);
+      await api.post('/login', { email, password });
+      navigate('/welcome', { replace: true });
       window.dispatchEvent(new Event('token-change'));
-      window.location.replace('/albums');
-      window.location.replace('/welcome');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
-  };
+  }
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-100">
-      <form onSubmit={onSubmit} className="bg-white p-6 rounded shadow-md w-80">
-        <div className="flex flex-col items-center mb-6">
-        <img src={logo} alt="NuageVault" className="h-12 w-auto" />
-        <h2 className="text-xl font-semibold mt-2">Login to your vault</h2>
-      </div>
+    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-800 p-4">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-md bg-white dark:bg-slate-700 rounded-lg shadow-lg overflow-hidden"
+      >
+        {/* top accent bar */}
+        <div className="h-2 bg-indigo-600" />
 
-
-        {flashMsg && <p className="text-green-600 mb-2">{flashMsg}</p>}
-        {error    && <p className="text-red-500   mb-2">{error}</p>}
-
-        <label className="block mb-2">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            className="w-full border p-2 rounded mt-1"
-            required
+        {/* body */}
+        <div className="p-8 flex flex-col items-center space-y-6">
+          {/* logo */}
+          <img
+            src="/nuagevault-logo.svg"
+            alt="NuageVault"
+            className="h-16 w-16 rounded shadow-sm"
           />
-        </label>
 
-        <label className="block mb-4">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="w-full border p-2 rounded mt-1"
-            required
-          />
-        </label>
+          <h2 className="text-2xl font-semibold text-center">
+            Login to your vault
+          </h2>
 
-        <button
-          type="submit"
-          className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-        >
-          Login
-        </button>
+          {flashMsg && (
+            <p className="w-full text-sm text-green-600 bg-green-50 border border-green-200 rounded p-2">
+              {flashMsg}
+            </p>
+          )}
+          {error && (
+            <p className="w-full text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
+              {error}
+            </p>
+          )}
 
-        <p className="mt-2 text-sm text-center">
-          <Link to="/forgot" className="text-blue-600 hover:underline">Forgot password?</Link>
-        </p>
+          <label className="w-full space-y-1">
+            <span className="text-sm">Email</span>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
 
-        <p className="mt-3 text-sm text-center">
-          Need an account?{' '}
-          <Link to="/signup" className="text-blue-600 hover:underline">
-            Sign up
-          </Link>
-        </p>
+          <label className="w-full space-y-1">
+            <span className="text-sm">Password</span>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition"
+          >
+            Login
+          </button>
+
+          <div className="flex justify-between w-full text-sm">
+            <Link to="/forgot" className="text-blue-600 hover:underline">
+              Forgot password?
+            </Link>
+            <span>
+              Need an account?{' '}
+              <Link to="/signup" className="text-blue-600 hover:underline">
+                Sign up
+              </Link>
+            </span>
+          </div>
+        </div>
       </form>
-    </div>
+    </main>
   );
 }
