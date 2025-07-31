@@ -1,6 +1,7 @@
 // cloud-photo-ui/src/pages/LoginPage.tsx
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import logo from '../assets/nuagevault-logo.png';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 
@@ -88,7 +89,12 @@ export default function LoginPage() {
               className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </label>
-
+         {/* logo */}
+          <img
+            src={logo}
+            alt="NuageVault"
+           className="h-16 w-16 rounded shadow-sm"
+          />
           <button
             type="submit"
             className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition"
