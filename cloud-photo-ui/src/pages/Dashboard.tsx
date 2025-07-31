@@ -15,21 +15,21 @@ export default function Dashboard() {
   const [err,   setErr]   = useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get<Stats>('/users/me/stats');
-        setStats(data);
-      } catch (e: any) {
-        if (e.response?.status === 401) {
-          // Token really invalid → kick out
-          localStorage.removeItem('token');
-          navigate('/login', { replace: true });
-        } else {
-          setErr('Failed to load stats');
-        }
+  (async () => {
+    try {
+      // call the API exactly as defined above
+      const { data } = await api.get<Stats>('/stats/');
+      setStats(data);
+    } catch (e: any) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem('token');
+        navigate('/login', { replace: true });
+      } else {
+        setErr('Failed to load stats');
       }
-    })();
-  }, [navigate]);
+    }
+  })();
+}, [navigate]);
 
   if (err)    return <p className="p-8 text-red-600">{err}</p>;
   if (!stats) return <p className="p-8">Loading…</p>;
