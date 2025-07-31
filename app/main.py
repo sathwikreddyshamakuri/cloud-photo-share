@@ -2,16 +2,15 @@
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import stats
-app.include_router(stats.router)
+
+# local modules
 from .auth import RegisterIn, LoginIn, register_user, login_user
-from .routers import albums, photos, users, account  
-from .aws_config import dyna, S3_BUCKET, s3  
-from .routers import albums, photos, users, account, stats 
+from .routers import albums, photos, users, account, stats
 
-app = FastAPI(title="Cloud Photo‑Share API", version="0.7.0")
+#  FastAPI app 
+app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
 
-# CORS
+#  CORS (adjust origins as needed) 
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
@@ -21,13 +20,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
+#  Routers 
 app.include_router(albums.router,  tags=["albums"])
 app.include_router(photos.router,  tags=["photos"])
 app.include_router(users.router,   tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
-app.include_router(stats.router)
-# Health/check
+app.include_router(stats.router,   tags=["stats"])   # new dashboard stats
+
+#  Misc endpoints 
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
@@ -42,4 +42,5 @@ def login(body: LoginIn):
 
 @app.get("/feed")
 def get_feed(limit: int = 20):
+    """placeholder – extend later if you implement a public feed"""
     return {"photos": []}
