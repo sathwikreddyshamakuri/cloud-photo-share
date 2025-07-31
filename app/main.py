@@ -2,10 +2,12 @@
 import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from .routers import stats
+app.include_router(stats.router)
 from .auth import RegisterIn, LoginIn, register_user, login_user
-from .routers import albums, photos, users, account  # make sure these files exist
-from .aws_config import dyna, S3_BUCKET, s3  # noqa: F401  keep imports for side‑effects
+from .routers import albums, photos, users, account  
+from .aws_config import dyna, S3_BUCKET, s3  
+from .routers import albums, photos, users, account, stats 
 
 app = FastAPI(title="Cloud Photo‑Share API", version="0.7.0")
 
@@ -24,7 +26,7 @@ app.include_router(albums.router,  tags=["albums"])
 app.include_router(photos.router,  tags=["photos"])
 app.include_router(users.router,   tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
-
+app.include_router(stats.router)
 # Health/check
 @app.get("/health")
 def health():
