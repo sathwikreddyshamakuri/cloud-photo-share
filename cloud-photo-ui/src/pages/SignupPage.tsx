@@ -3,55 +3,57 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api';
-import logo from '../assets/nuagevault-logo.svg';
 
 type RegisterResp = {
-  user_id: string;
-  email_sent: boolean;
-  need_verify: boolean;
+  user_id:      string;
+  email_sent:   boolean;
+  need_verify:  boolean;
 };
 
 export default function SignupPage() {
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
+  const [error,    setError]    = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     try {
-      const res = await api.post<RegisterResp>('/register', { email, password });
+      const { data } = await api.post<RegisterResp>('/register', { email, password });
 
-      if (res.data.need_verify) {
+      if (data.need_verify) {
         navigate('/login', {
           replace: true,
           state: {
-            msg: res.data.email_sent
+            msg: data.email_sent
               ? 'Account created! Check your email to verify your account.'
-              : 'Account created, but we could not send a verification email. Try again later.'
-          }
+              : 'Account created, but we could not send a verification email. Try again later.',
+          },
         });
       } else {
-        // auto-verified (e.g., AUTO_VERIFY_USERS=1)
+        // AUTO_VERIFY_USERS=1 path
         navigate('/albums', { replace: true });
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Sign‑up failed');
+      setError(err.response?.data?.detail || 'Sign-up failed');
     }
   }
 
   return (
-    <div className="flex items-center justify-center h-screen bg-gray-100">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      {/* brand header */}
+      <div className="flex flex-col items-center mb-6">
+        {/* logo lives in /public so it’s served at the root */}
+        <img src="/nuagevault-logo.svg" alt="NuageVault" className="h-12 w-auto" />
+        <h2 className="text-xl font-semibold mt-2">Create your vault account</h2>
+      </div>
+
       <form onSubmit={onSubmit} className="bg-white p-6 rounded shadow-md w-80">
-        <div className="flex flex-col items-center mb-6">
-          <img src={logo} alt="NuageVault" className="h-12 w-auto" />
-          <h2 className="text-xl font-semibold mt-2">Login to your vault</h2>
-        </div>
+        {error && <p className="text-red-500 mb-3">{error}</p>}
 
-        {error && <p className="text-red-500 mb-2">{error}</p>}
-
-        <label className="block mb-2">
+        <label className="block mb-3">
           Email
           <input
             type="email"
