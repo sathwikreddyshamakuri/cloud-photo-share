@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from ..auth import (
     ForgotIn, ResetIn, VerifyIn, ChangePwdIn,
     forgot_password, reset_password, verify_email,
-    change_password, current_user
+    change_password, current_user,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth-extra"])
