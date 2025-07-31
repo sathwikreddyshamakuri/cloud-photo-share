@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import api  from '../lib/api';
-import logo from '../assets/nuagevault-logo.svg';
+import logo from '../assets/nuagevault-logo.png';
 
 export default function VerifyEmailPage() {
   const [sp]      = useSearchParams();
