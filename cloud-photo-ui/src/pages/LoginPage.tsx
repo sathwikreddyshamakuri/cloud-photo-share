@@ -48,7 +48,6 @@ export default function LoginPage() {
         {/* body */}
         <div className="p-8 flex flex-col items-center space-y-6">
           <img
-            src="/nuagevault-logo.svg"   /* or .png if that’s what you uploaded */
             alt="NuageVault"
             className="h-16 w-16 rounded shadow-sm"
           />
