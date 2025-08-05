@@ -1,104 +1,80 @@
-// cloud-photo-ui/src/pages/LoginPage.tsx
-import { useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import api from '../lib/api';
-import logo from '../assets/nuagevault-logo.png';   // ✔ bundled path
+// cloud-photo-ui/src/pages/LandingPage.tsx
+import { Link } from 'react-router-dom';
+import logo     from '../assets/nuagevault-logo.png';   // same file used elsewhere
 
-export default function LoginPage() {
-  const navigate = useNavigate();
-  const { state } = useLocation();
-  const flashMsg: string | undefined = (state as any)?.msg;
-
-  // ── redirect authenticated users straight to /albums ──
-  if (localStorage.getItem('token')) {
-    navigate('/albums', { replace: true });
-  }
-
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
-
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    try {
-      await api.post('/login', { email, password });
-      // login OK → show intro splash, then albums
-      navigate('/welcome', { replace: true });
-      window.dispatchEvent(new Event('token-change'));
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed');
-    }
-  }
-
+export default function LandingPage() {
   return (
-    <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-800 p-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-md bg-white dark:bg-slate-700 rounded-lg shadow-lg overflow-hidden"
-      >
-        {/* top accent bar */}
-        <div className="h-2 bg-indigo-600" />
+    <main className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-900">
+      {/* ───── hero ───── */}
+      <section className="flex-1 flex flex-col items-center justify-center text-center px-4">
+        <img
+          src={logo}
+          alt="NuageVault"
+          className="h-20 w-auto mb-8 drop-shadow-lg"
+        />
 
-        <div className="p-8 flex flex-col items-center space-y-6">
-          <img src={logo} alt="NuageVault" className="h-16 w-16 rounded" />
+        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight mb-4">
+          Your <span className="text-indigo-600">secure</span> personal cloud
+        </h1>
 
-          <h2 className="text-2xl font-semibold text-center">Log in</h2>
+        <p className="max-w-xl mx-auto text-lg text-slate-600 dark:text-slate-300 mb-8">
+          NuageVault stores, organises and shares your memories on <em>your</em>
+          &nbsp;terms. 100 % private • End-to-end encrypted • Runs on AWS.
+        </p>
 
-          {flashMsg && (
-            <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
-              {flashMsg}
-            </p>
-          )}
-          {error && (
-            <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
-              {error}
-            </p>
-          )}
-
-          <label className="w-full space-y-1">
-            <span className="text-sm">Email</span>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </label>
-
-          <label className="w-full space-y-1">
-            <span className="text-sm">Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </label>
-
-          <button
-            type="submit"
-            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition"
+        <div className="flex flex-wrap justify-center gap-4">
+          <Link
+            to="/signup"
+            className="rounded bg-indigo-600 px-6 py-3 text-white font-medium hover:bg-indigo-500 transition"
           >
-            Log In
-          </button>
-
-          <div className="flex justify-between w-full text-sm">
-            <Link to="/forgot" className="text-blue-600 hover:underline">
-              Forgot password?
-            </Link>
-            <span>
-              Need an account?{' '}
-              <Link to="/signup" className="text-blue-600 hover:underline">
-                Sign up
-              </Link>
-            </span>
-          </div>
+            Get started – it’s free
+          </Link>
+          <Link
+            to="/login"
+            className="rounded border border-indigo-600 px-6 py-3 text-indigo-600 font-medium hover:bg-indigo-50 dark:hover:bg-slate-800/40 transition"
+          >
+            Log&nbsp;in
+          </Link>
         </div>
-      </form>
+      </section>
+
+      {/* ───── tiny features strip (optional) ───── */}
+      <section className="bg-white dark:bg-slate-800 py-8 border-t border-slate-200 dark:border-slate-700">
+        <div className="max-w-5xl mx-auto grid gap-6 sm:grid-cols-3 px-6 text-center">
+          <Feature icon="🔒" title="Zero-knowledge">
+            Only <strong>you</strong> can read your photos.
+          </Feature>
+          <Feature icon="⚡" title="Blazing fast">
+            Optimised CloudFront delivery worldwide.
+          </Feature>
+          <Feature icon="☁️" title="Unlimited storage">
+            Pay only for what you actually use.
+          </Feature>
+        </div>
+      </section>
+
+      {/* ───── footer ───── */}
+      <footer className="py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+        © {new Date().getFullYear()} NuageVault • Made with&nbsp;❤
+      </footer>
     </main>
+  );
+}
+
+function Feature({
+  icon,
+  title,
+  children,
+}: {
+  icon: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-3xl">{icon}</div>
+      <h3 className="font-semibold">{title}</h3>
+      <p className="text-sm text-slate-600 dark:text-slate-300">{children}</p>
+    </div>
   );
 }
