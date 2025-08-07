@@ -7,7 +7,7 @@ import { ClipboardDocumentIcon } from '@heroicons/react/24/solid';
 import ThemeToggle from '../components/ThemeToggle';
 import api         from '../lib/api';
 
-/* ------------------------------------------------------------------ */
+
 /* types */
 interface Album {
   album_id:   string;
@@ -17,7 +17,7 @@ interface Album {
   cover_url?: string | null;
 }
 
-/* ------------------------------------------------------------------ */
+
 /* component */
 export default function AlbumsPage() {
   const navigate = useNavigate();
@@ -35,7 +35,7 @@ export default function AlbumsPage() {
   const [renamingId,  setRenaming]   = useState<string | null>(null);
   const [renameTitle, setRename]     = useState('');
 
-  /* ---------------------------------------------------------------- */
+ 
   /* load albums once */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
@@ -55,7 +55,7 @@ export default function AlbumsPage() {
     } catch (e: any) {
       if (e.response?.status === 401) {
         localStorage.removeItem('token');
-        navigate('/', { replace: true });
+        navigate('/login', { replace: true });
       } else {
         setError('Failed to load albums');
       }
@@ -70,7 +70,7 @@ export default function AlbumsPage() {
     setFiltered(albums.filter(a => a.title.toLowerCase().includes(term)));
   }, [search, albums]);
 
-  /* ---------------------------------------------------------------- */
+
   /* CRUD helpers */
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -123,12 +123,12 @@ export default function AlbumsPage() {
     }
   }
 
-  /* ---------------------------------------------------------------- */
+
   /* render guards */
   if (loading) return <p className="p-8">Loading albums…</p>;
   if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
-  /* ---------------------------------------------------------------- */
+
   return (
     <div className="p-8 bg-slate-50 dark:bg-slate-800 min-h-screen text-slate-900 dark:text-slate-100">
       {/* top bar */}
@@ -151,7 +151,7 @@ export default function AlbumsPage() {
           </button>
 
           <button
-            onClick={() => { localStorage.removeItem('token'); navigate('/', { replace:true }); }}
+            onClick={() => { localStorage.removeItem('token'); navigate('/login', { replace:true }); }}
             className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
           >
             Logout
@@ -232,7 +232,7 @@ export default function AlbumsPage() {
         ))}
       </div>
 
-      {/* create modal */}
+      {/*  create modal  */}
       {creating && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
