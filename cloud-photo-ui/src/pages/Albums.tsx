@@ -151,7 +151,7 @@ export default function AlbumsPage() {
           </button>
 
           <button
-            onClick={() => { localStorage.removeItem('token'); navigate('/login', { replace:true }); }}
+            onClick={() => { localStorage.removeItem('token'); navigate('/', { replace:true }); }}
             className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
           >
             Logout
