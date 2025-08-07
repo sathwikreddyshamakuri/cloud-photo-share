@@ -1,45 +1,42 @@
-// src/pages/Albums.tsx
+// cloud-photo-ui/src/pages/Albums.tsx
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import toast               from 'react-hot-toast';
+import toast from 'react-hot-toast';
 import { ClipboardDocumentIcon } from '@heroicons/react/24/solid';
 
 import ThemeToggle from '../components/ThemeToggle';
 import api         from '../lib/api';
 
-
-/* types */
+/* ── types ─────────────────────────────────────────────── */
 interface Album {
-  album_id:   string;
-  owner:      string;
-  title:      string;
+  album_id : string;
+  owner    : string;
+  title    : string;
   created_at: number;
   cover_url?: string | null;
 }
 
-
-/* component */
+/* ── component ─────────────────────────────────────────── */
 export default function AlbumsPage() {
   const navigate = useNavigate();
 
   /* data & ui state */
-  const [albums,      setAlbums]     = useState<Album[]>([]);
-  const [filtered,    setFiltered]   = useState<Album[]>([]);
-  const [loading,     setLoading]    = useState(true);
-  const [error,       setError]      = useState<string | null>(null);
+  const [albums,   setAlbums]   = useState<Album[]>([]);
+  const [filtered, setFiltered] = useState<Album[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
 
-  const [search,      setSearch]     = useState('');
-  const [creating,    setCreating]   = useState(false);
-  const [newTitle,    setNewTitle]   = useState('');
+  const [search,   setSearch]   = useState('');
+  const [creating, setCreating] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
 
-  const [renamingId,  setRenaming]   = useState<string | null>(null);
-  const [renameTitle, setRename]     = useState('');
+  const [renamingId,  setRenaming] = useState<string | null>(null);
+  const [renameTitle, setRename]   = useState('');
 
- 
-  /* load albums once */
+  /* ── run once ─────────────────────────────────────────── */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
-      navigate('/landingpage.tsx', { replace: true });
+      navigate('/', { replace: true });            // go to landing page
       return;
     }
     fetchAlbums();
@@ -70,8 +67,7 @@ export default function AlbumsPage() {
     setFiltered(albums.filter(a => a.title.toLowerCase().includes(term)));
   }, [search, albums]);
 
-
-  /* CRUD helpers */
+  /* ── CRUD helpers ─────────────────────────────────────── */
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     const title = newTitle.trim();
@@ -98,9 +94,7 @@ export default function AlbumsPage() {
 
     try {
       await api.put(`/albums/${renamingId}`, { title });
-      const upd = albums.map(a =>
-        a.album_id === renamingId ? { ...a, title } : a
-      );
+      const upd = albums.map(a => a.album_id === renamingId ? { ...a, title } : a);
       setAlbums(upd);
       setFiltered(upd);
       setRenaming(null);
@@ -123,12 +117,11 @@ export default function AlbumsPage() {
     }
   }
 
-
-  /* render guards */
+  /* ── render guards ─────────────────────────────────────── */
   if (loading) return <p className="p-8">Loading albums…</p>;
   if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
-
+  /* ── UI ───────────────────────────────────────────────── */
   return (
     <div className="p-8 bg-slate-50 dark:bg-slate-800 min-h-screen text-slate-900 dark:text-slate-100">
       {/* top bar */}
@@ -150,8 +143,13 @@ export default function AlbumsPage() {
             Profile
           </button>
 
+          {/* Logout */}
           <button
-            onClick={() => { localStorage.removeItem('token'); navigate('/landingpage.tsx', { replace:true }); }}
+            onClick={() => {
+              localStorage.removeItem('token');
+              window.dispatchEvent(new Event('token-change'));
+              navigate('/', { replace: true });     // landing page
+            }}
             className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
           >
             Logout
@@ -184,8 +182,7 @@ export default function AlbumsPage() {
                className="relative bg-white dark:bg-slate-700 rounded shadow hover:shadow-lg transition">
             <Link to={`/albums/${alb.album_id}`}>
               {alb.cover_url ? (
-                <img src={alb.cover_url}
-                     alt={alb.title}
+                <img src={alb.cover_url} alt={alb.title}
                      className="w-full aspect-[4/3] object-cover rounded-t" />
               ) : (
                 <div className="w-full aspect-[4/3] bg-gray-200 dark:bg-slate-600 flex items-center justify-center rounded-t">
@@ -203,8 +200,7 @@ export default function AlbumsPage() {
               <button
                 onClick={() => {
                   const url = `${window.location.origin}/albums/${alb.album_id}`;
-                  navigator.clipboard.writeText(url)
-                    .then(() => toast.success('Link copied!'));
+                  navigator.clipboard.writeText(url).then(() => toast.success('Link copied!'));
                 }}
                 className="rounded bg-white dark:bg-slate-800 p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-slate-700"
                 title="Copy share link"
@@ -232,7 +228,7 @@ export default function AlbumsPage() {
         ))}
       </div>
 
-      {/*  create modal  */}
+      {/* create modal */}
       {creating && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
@@ -261,7 +257,7 @@ export default function AlbumsPage() {
         </div>
       )}
 
-      {/*  rename modal  */}
+      {/* rename modal */}
       {renamingId && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
