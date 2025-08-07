@@ -55,7 +55,7 @@ export default function AlbumsPage() {
     } catch (e: any) {
       if (e.response?.status === 401) {
         localStorage.removeItem('token');
-        navigate('/login', { replace: true });
+        navigate('/', { replace: true });
       } else {
         setError('Failed to load albums');
       }
@@ -151,7 +151,7 @@ export default function AlbumsPage() {
           </button>
 
           <button
-            onClick={() => { localStorage.removeItem('token'); navigate('/login', { replace:true }); }}
+            onClick={() => { localStorage.removeItem('token'); navigate('/', { replace:true }); }}
             className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
           >
             Logout
@@ -232,7 +232,7 @@ export default function AlbumsPage() {
         ))}
       </div>
 
-      {/* ───────── create modal ───────── */}
+      {/* create modal */}
       {creating && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
@@ -261,7 +261,7 @@ export default function AlbumsPage() {
         </div>
       )}
 
-      {/* ───────── rename modal ───────── */}
+      {/*  rename modal  */}
       {renamingId && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black/50 z-50"
