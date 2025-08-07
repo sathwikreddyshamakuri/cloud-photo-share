@@ -39,7 +39,7 @@ export default function AlbumsPage() {
   /* load albums once */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
-      navigate('/', { replace: true });
+      navigate('/landingpage.tsx', { replace: true });
       return;
     }
     fetchAlbums();
@@ -151,7 +151,7 @@ export default function AlbumsPage() {
           </button>
 
           <button
-            onClick={() => { localStorage.removeItem('token'); navigate('/', { replace:true }); }}
+            onClick={() => { localStorage.removeItem('token'); navigate('/landingpage.tsx', { replace:true }); }}
             className="rounded bg-red-500 px-3 py-1 text-white hover:bg-red-400"
           >
             Logout
