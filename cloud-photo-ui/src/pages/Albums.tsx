@@ -39,7 +39,7 @@ export default function AlbumsPage() {
   /* load albums once */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
-      navigate('/login', { replace: true });
+      navigate('/', { replace: true });
       return;
     }
     fetchAlbums();
@@ -55,7 +55,7 @@ export default function AlbumsPage() {
     } catch (e: any) {
       if (e.response?.status === 401) {
         localStorage.removeItem('token');
-        navigate('/login', { replace: true });
+        navigate('/', { replace: true });
       } else {
         setError('Failed to load albums');
       }
