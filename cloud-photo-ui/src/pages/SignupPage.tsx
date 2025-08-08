@@ -1,10 +1,11 @@
 // cloud-photo-ui/src/pages/SignupPage.tsx
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate }        from 'react-router-dom';
-import api                           from '../lib/api';
+import api                          from '../lib/api';
+import logo                         from '../assets/nuagevault-logo.png';   
 
-/* ------------------------------------------------------------------ */
-/* API response shape */
+
+/* API response */
 interface RegisterResp {
   user_id:     string;
   email_sent:  boolean;
@@ -19,7 +20,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState<string | null>(null);
 
-  /* submit handler */
+  /* submit */
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -37,7 +38,6 @@ export default function SignupPage() {
           },
         });
       } else {
-        // AUTO_VERIFY_USERS=1 path
         navigate('/albums', { replace: true });
       }
     } catch (err: any) {
@@ -45,22 +45,17 @@ export default function SignupPage() {
     }
   }
 
-  /* ------------------------------------------------------------------ */
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+    <main className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
       {/* brand header */}
       <div className="flex flex-col items-center mb-6">
-        {/* logo lives in /public so it’s served at the root */}
-        <img
-          src="/nuagevault-logo.png"
-          alt="NuageVault logo"
-          className="h-12 w-auto"
-        />
-        <h2 className="text-xl font-semibold mt-2">Create your vault account</h2>
+        <img src={logo} alt="NuageVault logo" className="h-20 w-auto drop-shadow" />
+        <h2 className="text-2xl font-semibold mt-2">Create your vault account</h2>
       </div>
 
       <form onSubmit={onSubmit} className="bg-white p-6 rounded shadow-md w-80">
-        {error && <p className="text-red-500 mb-3">{error}</p>}
+        {error && <p className="text-red-600 mb-3">{error}</p>}
 
         <label className="block mb-3">
           Email
@@ -99,6 +94,6 @@ export default function SignupPage() {
           </Link>
         </p>
       </form>
-    </div>
+    </main>
   );
 }
