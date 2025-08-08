@@ -7,7 +7,7 @@ import { ClipboardDocumentIcon } from '@heroicons/react/24/solid';
 import ThemeToggle from '../components/ThemeToggle';
 import api         from '../lib/api';
 
-/* ── types ─────────────────────────────────────────────── */
+/*  types  */
 interface Album {
   album_id : string;
   owner    : string;
@@ -16,7 +16,7 @@ interface Album {
   cover_url?: string | null;
 }
 
-/* ── component ─────────────────────────────────────────── */
+/*  component  */
 export default function AlbumsPage() {
   const navigate = useNavigate();
 
@@ -33,7 +33,7 @@ export default function AlbumsPage() {
   const [renamingId,  setRenaming] = useState<string | null>(null);
   const [renameTitle, setRename]   = useState('');
 
-  /* ── run once ─────────────────────────────────────────── */
+  /*  run once  */
   useEffect(() => {
     if (!localStorage.getItem('token')) {
       navigate('/', { replace: true });            // go to landing page
@@ -67,7 +67,7 @@ export default function AlbumsPage() {
     setFiltered(albums.filter(a => a.title.toLowerCase().includes(term)));
   }, [search, albums]);
 
-  /* ── CRUD helpers ─────────────────────────────────────── */
+  /*  CRUD helpers  */
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     const title = newTitle.trim();
@@ -117,11 +117,11 @@ export default function AlbumsPage() {
     }
   }
 
-  /* ── render guards ─────────────────────────────────────── */
+  /*  render guards  */
   if (loading) return <p className="p-8">Loading albums…</p>;
   if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
-  /* ── UI ───────────────────────────────────────────────── */
+  /*  UI  */
   return (
     <div className="p-8 bg-slate-50 dark:bg-slate-800 min-h-screen text-slate-900 dark:text-slate-100">
       {/* top bar */}
