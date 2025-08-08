@@ -7,17 +7,18 @@ import api                                     from '../lib/api';
 
 
 export default function LoginPage() {
-  const navigate      = useNavigate();
-  const { state }     = useLocation();
+  const navigate          = useNavigate();
+  const { state }         = useLocation();
   const flashMsg: string | undefined = (state as any)?.msg;
 
-
+  /* show toast once on first paint */
   useEffect(() => {
     if (flashMsg) toast.success(flashMsg);
-  }, [flashMsg]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);                     // run once – not every re-render
 
-
-  if (localStorage.getItem('token')) navigate('/albums', { replace:true });
+  /* already authenticated? → skip */
+  if (localStorage.getItem('token')) navigate('/albums', { replace: true });
 
   /* form state */
   const [email,    setEmail]    = useState('');
@@ -27,13 +28,12 @@ export default function LoginPage() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-
     try {
-      const { data } = await api.post<{ access_token:string }>('/login', { email, password });
+      const { data } = await api.post<{ access_token: string }>('/login', { email, password });
       localStorage.setItem('token', data.access_token);
       window.dispatchEvent(new Event('token-change'));
-      navigate('/albums', { replace:true });
-    } catch (err:any) {
+      navigate('/albums', { replace: true });
+    } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
   }
@@ -49,8 +49,16 @@ export default function LoginPage() {
 
         <div className="p-8 flex flex-col items-center space-y-6">
           <img src={logo} alt="NuageVault" className="h-16 w-16 rounded shadow-sm" />
-          <h2 className="text-2xl font-semibold text-center">Log in</h2>
+          <h2 className="text-2xl font-semibold">Log in</h2>
 
+          {/* inline success banner  */}
+          {flashMsg && (
+            <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
+              {flashMsg}
+            </p>
+          )}
+
+          {/* inline error banner  */}
           {error && (
             <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
               {error}
