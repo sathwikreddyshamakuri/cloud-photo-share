@@ -1,38 +1,43 @@
-import { useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import api  from '../lib/api';
-import logo from '../assets/nuagevault-logo.png';
+// cloud-photo-ui/src/pages/LoginPage.tsx
+import { useState, useEffect, type FormEvent } from 'react';
+import { Link, useLocation, useNavigate }      from 'react-router-dom';
+import toast                                   from 'react-hot-toast';
+import logo                                    from '../assets/nuagevault-logo.png';
+import api                                     from '../lib/api';
+
 
 export default function LoginPage() {
-  const navigate = useNavigate();
-  const { state } = useLocation();
+  const navigate      = useNavigate();
+  const { state }     = useLocation();
   const flashMsg: string | undefined = (state as any)?.msg;
 
-  const [email, setEmail]       = useState('');
+
+  useEffect(() => {
+    if (flashMsg) toast.success(flashMsg);
+  }, [flashMsg]);
+
+
+  if (localStorage.getItem('token')) navigate('/albums', { replace:true });
+
+  /* form state */
+  const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError]       = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
 
     try {
-      // 1. authenticate
-      const { data } = await api.post<{ access_token: string }>('/login', {
-        email,
-        password,
-      });
-
-      // 2. persist token & notify app
+      const { data } = await api.post<{ access_token:string }>('/login', { email, password });
       localStorage.setItem('token', data.access_token);
       window.dispatchEvent(new Event('token-change'));
-
-      // 3. go to albums
-      navigate('/albums', { replace: true });
-    } catch (err: any) {
+      navigate('/albums', { replace:true });
+    } catch (err:any) {
       setError(err.response?.data?.detail || 'Login failed');
     }
   }
+
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-800 p-4">
@@ -40,24 +45,12 @@ export default function LoginPage() {
         onSubmit={onSubmit}
         className="w-full max-w-md bg-white dark:bg-slate-700 rounded-lg shadow-lg overflow-hidden"
       >
-        {/* top accent bar */}
         <div className="h-2 bg-indigo-600" />
 
         <div className="p-8 flex flex-col items-center space-y-6">
-          {/* single centred logo */}
-          <img
-            src={logo}
-            alt="NuageVault"
-            className="h-16 w-16 rounded shadow-sm"
-          />
-
+          <img src={logo} alt="NuageVault" className="h-16 w-16 rounded shadow-sm" />
           <h2 className="text-2xl font-semibold text-center">Log in</h2>
 
-          {flashMsg && (
-            <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
-              {flashMsg}
-            </p>
-          )}
           {error && (
             <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
               {error}
