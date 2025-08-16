@@ -68,5 +68,34 @@ python -m venv .venv
 
 pip install -r requirements.txt
 
+Create app/.env (or export env vars):
+
+# JWT & CORS
+JWT_SECRET=replace-me
+JWT_EXPIRE_HOURS=168
+# allow localhost UI + Vercel
+CORS_ORIGINS=http://localhost:5173,https://*.vercel.app
+
+# AWS
+AWS_REGION=us-east-1
+S3_BUCKET=your-photo-bucket
+DDB_USERS_TABLE=Users
+DDB_ALBUMS_TABLE=Albums
+DDB_PHOTOS_TABLE=PhotoMeta
+
+# Email (optional if you skip verification)
+SES_FROM=you@yourdomain.com
+AUTO_VERIFY_USERS=0
+
+DynamoDB tables & index
+
+Users (PK: user_id)
+
+Albums (PK: album_id, attrs: owner, title, created_at, cover_url)
+
+PhotoMeta (PK: photo_id, attrs: album_id, owner, s3_key, size, uploaded_at, url)
+
+GSI on PhotoMeta: album_id-index (Partition Key: album_id)
+
 
 
