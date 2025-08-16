@@ -23,3 +23,50 @@ NuageVault is a full-stack photo app: **FastAPI** backend + **React (TypeScript,
 
 ## 🗂 Project structure
 
+cloud-photo-share/
+├─ app/ # FastAPI backend
+│ ├─ main.py
+│ ├─ auth.py
+│ ├─ aws_config.py
+│ ├─ routers/
+│ │ ├─ albums.py
+│ │ ├─ photos.py
+│ │ ├─ users.py
+│ │ ├─ account.py
+│ │ └─ stats.py
+├─ cloud-photo-ui/ # React + Vite + Tailwind frontend
+│ ├─ src/
+│ │ ├─ lib/api.ts
+│ │ ├─ pages/
+│ │ └─ components/
+│ └─ public/index.html
+└─ tests/ # Pytest API tests
+
+
+---
+
+## 🧰 Tech
+
+- **Backend:** FastAPI, Python 3.12, boto3, passlib, PyJWT  
+- **AWS:** S3 (photos), DynamoDB (Users, Albums, PhotoMeta), SES (emails)  
+- **Frontend:** React + TypeScript + Vite + Tailwind  
+- **Deploy:** Render (API) & Vercel (UI)
+
+---
+
+## 🚀 Quick start (local)
+
+> Prereqs: Python 3.12+, Node 18+, AWS account (S3, DynamoDB, SES).
+
+### 1) Backend (FastAPI)
+
+```bash
+cd app
+python -m venv .venv
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+
+pip install -r requirements.txt
+
+
+
