@@ -15,18 +15,6 @@ Deploy: **Vercel** (UI) + **Render** (API)
 
 ---
 
----
-
-## Quick Start
-
-### 1) Backend (FastAPI)
-```bash
-cd app
-python -m venv .venv
-# Windows: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-
 
 ---
 
@@ -40,7 +28,6 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 
-Create app/.env:
 JWT_SECRET=replace-me
 JWT_EXPIRE_HOURS=168
 CORS_ORIGINS=http://localhost:5173,https://*.vercel.app
@@ -54,7 +41,7 @@ DDB_PHOTOS_TABLE=PhotoMeta
 SES_FROM=you@yourdomain.com
 AUTO_VERIFY_USERS=0
 
-Create DynamoDB tables: Users, Albums, PhotoMeta, and a GSI on PhotoMeta named album_id-index (PK: album_id).
-Run:
-
 uvicorn app.main:app --reload --port 8000
+
+cd cloud-photo-ui
+npm install
