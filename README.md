@@ -69,7 +69,7 @@ npm run dev
 
 - /albums — Main app (album list)
 
-/albums/:id — Album detail (upload, select, download, delete, lightbox)
+- /albums/:id — Album detail (upload, select, download, delete, lightbox)
 
 - /dashboard — Usage stats
 
