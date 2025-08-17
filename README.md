@@ -16,7 +16,32 @@ NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, 
 **Backend:** FastAPI, AWS DynamoDB (Users/Albums/PhotoMeta), S3 (optional CloudFront)
 
 ## Repo Layout
-```text
+
 cloud-photo-share/
 ├─ app/              # FastAPI backend
 └─ cloud-photo-ui/   # React (Vite) frontend
+
+## Quick Start(Local)
+## Backend(FastAPI)
+cd app
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+
+## Create app/.env:
+AWS_REGION=us-east-1
+S3_BUCKET=your-s3-bucket-name
+DYNAMO_USERS=Users
+DYNAMO_ALBUMS=Albums
+DYNAMO_PHOTOS=PhotoMeta
+JWT_SECRET=please-change-to-a-long-random-string
+EMAIL_FROM=noreply@your-domain.com
+AUTO_VERIFY_USERS=1
+
+## Run the API:
+uvicorn app.main:app --reload --port 8000
+
+
+
+
