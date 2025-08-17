@@ -61,21 +61,21 @@ npm run dev
 ```
 ## 🧭 Frontend routes
 
--first item / — Landing page (marketing + “Get started” / “Log in” buttons)
+- / — Landing page (marketing + “Get started” / “Log in” buttons)
 
--second item /login — Login screen (success banner + toast when redirected from signup)
+- /login — Login screen (success banner + toast when redirected from signup)
 
-/signup — Registration form
+- /signup — Registration form
 
-/albums — Main app (album list)
+- /albums — Main app (album list)
 
 /albums/:id — Album detail (upload, select, download, delete, lightbox)
 
-/dashboard — Usage stats
+- /dashboard — Usage stats
 
-/profile — Profile & account
+- /profile — Profile & account
 
-/forgot, /reset, /verify — Password reset & email verification flows
+- /forgot, /reset, /verify — Password reset & email verification flows
 
 ## 🔐 Security & privacy
 
