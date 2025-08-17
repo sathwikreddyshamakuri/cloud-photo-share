@@ -1,47 +1,20 @@
-# NuageVault — Cloud Photo Share
+# NuageVault — Private Photo Cloud
 
-Fast, private photo storage & sharing.  
-Frontend: **React + TypeScript + Vite + Tailwind** • Backend: **FastAPI** • Storage: **AWS (S3 + DynamoDB + SES)**  
-Deploy: **Vercel** (UI) + **Render** (API)
-
----
+NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, open fullscreen, multi-select to download or delete, switch dark mode, verify email, and view a small usage dashboard.
 
 ## Features
-- Email signup/login (JWT) with optional verification
-- Albums: create/rename/delete/search
-- Photos: upload, full-screen lightbox, **multi-select download/delete**
-- Dashboard (usage stats), Profile (name/bio/avatar/password)
-- Light/Dark theme
+- Landing page at `/` with **Log in** / **Sign up**
+- JWT auth: register, login, logout (logout returns to `/`)
+- Albums: create, rename, delete
+- Photos: upload, fullscreen viewer, multi-select download/delete
+- Dashboard: albums/photos/storage stats
+- Profile: avatar, display name, bio, password change
+- Dark mode toggle
 
----
+## Tech Stack
+**Frontend:** React + TypeScript + Vite, Tailwind CSS, react-router, react-hot-toast  
+**Backend:** FastAPI, AWS DynamoDB (Users/Albums/PhotoMeta), S3 (optional CloudFront)
 
-
----
-
-## Quick Start
-
-### 1) Backend (FastAPI)
-```bash
-cd app
-python -m venv .venv
-# Windows: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-
-JWT_SECRET=replace-me
-JWT_EXPIRE_HOURS=168
-CORS_ORIGINS=http://localhost:5173,https://*.vercel.app
-
-AWS_REGION=us-east-1
-S3_BUCKET=your-photo-bucket
-DDB_USERS_TABLE=Users
-DDB_ALBUMS_TABLE=Albums
-DDB_PHOTOS_TABLE=PhotoMeta
-
-SES_FROM=you@yourdomain.com
-AUTO_VERIFY_USERS=0
-
-uvicorn app.main:app --reload --port 8000
-
-cd cloud-photo-ui
-npm install
+cloud-photo-share/
+├─ app/ # FastAPI backend
+└─ cloud-photo-ui/ # React (Vite) frontend
