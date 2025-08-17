@@ -15,14 +15,14 @@ NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, 
 **Frontend:** React + TypeScript + Vite, Tailwind CSS, react-router, react-hot-toast  
 **Backend:** FastAPI, AWS DynamoDB (Users/Albums/PhotoMeta), S3 (optional CloudFront)
 
-## Repo Layout
-```text
+### Repo Layout
+
 cloud-photo-share/
 ├─ app/              # FastAPI backend
 └─ cloud-photo-ui/   # React (Vite) frontend
-```
-## Quick Start(Local)
-## Backend(FastAPI)
+
+### Quick Start(Local)
+### Backend(FastAPI)
 ```bash
 cd app
 python -m venv .venv
@@ -45,7 +45,7 @@ AUTO_VERIFY_USERS=1
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
-## 2) Frontend (Vite)
+### 2) Frontend (Vite)
 ```bash
 cd cloud-photo-ui
 npm install
@@ -60,7 +60,7 @@ VITE_APP_NAME=NuageVault
 npm run dev
 ```
 ## 🧭 Frontend routes
-``` text
+
 / — Landing page (marketing + “Get started” / “Log in” buttons)
 
 /login — Login screen (success banner + toast when redirected from signup)
@@ -76,17 +76,17 @@ npm run dev
 /profile — Profile & account
 
 /forgot, /reset, /verify — Password reset & email verification flows
-```
+
 ## 🔐 Security & privacy
-```text
+
 JWT stored in localStorage
 
 S3 object URLs should be signed if you require stricter privacy (current code assumes safe distribution; you can switch to S3 pre-signed URLs/CloudFront signed cookies easily).
 
 SES sandbox requires verified emails; set AUTO_VERIFY_USERS=1 during development if you prefer to skip email verification (not recommended for prod).
-```
+
 ## 🛠 Troubleshooting
-```text
+
 Landing vs Login loop
 If / shows login instead of landing, ensure router guards only redirect when a valid token exists, and your logout navigates to / after removing the token.
 
@@ -98,7 +98,7 @@ Add your Vercel domain to CORS allow list. Double-check Authorization: Bearer <t
 
 DynamoDB scans slow / expensive
 Use queries on GSIs (album_id-index). Avoid full table scans in hot paths
-```
+
 ## Appendix — minimal IAM policy (example)
 ```bash
 {
