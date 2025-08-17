@@ -61,9 +61,9 @@ npm run dev
 ```
 ## 🧭 Frontend routes
 
-/ — Landing page (marketing + “Get started” / “Log in” buttons)
+-first item / — Landing page (marketing + “Get started” / “Log in” buttons)
 
-/login — Login screen (success banner + toast when redirected from signup)
+-second item /login — Login screen (success banner + toast when redirected from signup)
 
 /signup — Registration form
 
