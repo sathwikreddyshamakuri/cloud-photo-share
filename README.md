@@ -15,8 +15,20 @@ NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, 
 **Frontend:** React + TypeScript + Vite, Tailwind CSS, react-router, react-hot-toast  
 **Backend:** FastAPI, AWS DynamoDB (Users/Albums/PhotoMeta), S3 (optional CloudFront)
 
+## MonoRepo Layout
 cloud-photo-share/
-├─ 
-app/ # FastAPI backend
-└─ 
-cloud-photo-ui/ # React (Vite) frontend
+├─ app/ # FastAPI backend
+└─ cloud-photo-ui/ # React (Vite) frontend
+---
+
+## Quick Start (Local)
+
+### 1) Backend (FastAPI)
+```bash
+cd app
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+
+##Create app/.env:
