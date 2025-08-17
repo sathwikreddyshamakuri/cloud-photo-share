@@ -22,7 +22,7 @@ cloud-photo-share/
 └─ cloud-photo-ui/   # React (Vite) frontend
 
 ### Quick Start(Local)
-### Backend(FastAPI)
+## Backend(FastAPI)
 ```bash
 cd app
 python -m venv .venv
@@ -31,7 +31,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 ## Create app/.env:
-```bash
+```env
 AWS_REGION=us-east-1
 S3_BUCKET=your-s3-bucket-name
 DYNAMO_USERS=Users
@@ -87,20 +87,20 @@ SES sandbox requires verified emails; set AUTO_VERIFY_USERS=1 during development
 
 ## 🛠 Troubleshooting
 
-Landing vs Login loop
+-Landing vs Login loop:
 If / shows login instead of landing, ensure router guards only redirect when a valid token exists, and your logout navigates to / after removing the token.
 
-Stats shows “Failed to load stats”
+-Stats shows “Failed to load stats”:
 Confirm GET /stats/ exists and frontend calls /stats/ (not /users/me/stats). Also ensure PhotoMeta has GSI album_id-index.
 
-CORS 401/403
-Add your Vercel domain to CORS allow list. Double-check Authorization: Bearer <token> in requests.
+-CORS 401/403:
+Add Vercel domain to CORS allow list. Double-check Authorization: Bearer <token> in requests.
 
-DynamoDB scans slow / expensive
+-DynamoDB scans slow / expensive:
 Use queries on GSIs (album_id-index). Avoid full table scans in hot paths
 
 ## Appendix — minimal IAM policy (example)
-```bash
+```json
 {
   "Version": "2012-10-17",
   "Statement": [
