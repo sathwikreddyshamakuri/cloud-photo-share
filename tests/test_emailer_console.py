@@ -1,5 +1,4 @@
-﻿import os
-from importlib import reload
+﻿from importlib import reload
 
 def test_send_email_console(monkeypatch, capsys):
     # Force console mode so no external calls or secrets are needed

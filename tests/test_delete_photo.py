@@ -1,5 +1,6 @@
 # tests/test_delete_photo.py
-import uuid, time
+import uuid
+import time
 from fastapi.testclient import TestClient
 from app.main import app
 from app.aws_config import dyna, s3, S3_BUCKET

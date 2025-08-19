@@ -3,8 +3,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
 from pathlib import Path
 from datetime import datetime, timezone
 from PIL import Image, ExifTags
-import time, uuid, os, boto3
-from boto3.dynamodb.conditions import Attr
+import time
+import uuid
+import boto3
 
 from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna  
