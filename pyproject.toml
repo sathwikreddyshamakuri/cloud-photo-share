@@ -1,9 +1,9 @@
 ﻿[tool.ruff]
-target-version = "py313"
+target-version = "py312"
 line-length = 100
 extend-exclude = [
-  "alembic/",          # migrations; often noisy for linters
-  "node_modules/",     # just in case
+  "alembic/",
+  "node_modules/",
   ".venv/",
 ]
 
