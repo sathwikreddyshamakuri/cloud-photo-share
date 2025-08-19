@@ -1,5 +1,6 @@
 # app/routers/photos.py
-import uuid, time
+import uuid
+import time
 from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Depends, status
 from boto3.dynamodb.conditions import Key
 

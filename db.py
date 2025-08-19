@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, create_engine, Session
+from sqlmodel import create_engine, Session
 
 DATABASE_URL = "sqlite:///./cloudphoto.db"          # keep simple for dev
 engine = create_engine(DATABASE_URL, echo=False)

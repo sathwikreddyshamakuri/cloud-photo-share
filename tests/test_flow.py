@@ -1,4 +1,5 @@
-import io, uuid, pytest
+import io
+import uuid
 from PIL import Image
 from fastapi.testclient import TestClient
 from app.main import app

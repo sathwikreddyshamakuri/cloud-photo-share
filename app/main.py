@@ -3,39 +3,17 @@ import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# 1) Create the app BEFORE importing/including routers
-app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
-
-# 2) CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
-    allow_origins=["http://localhost:5173"],  # dev UI
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 3) Import routers AFTER app exists
-#    (make sure these modules exist under app/routers/)
+# Import routers at the top (fixes E402)
 from app.routers import albums, photos, users, account, stats
 
-# util router is optional — only include if you created it
+# util router is optional — import if present, else set to None
 try:
-    from app.routers import util
-    app.include_router(util.router, tags=["util"])
+    from app.routers import util  # type: ignore
 except Exception:
-    pass
+    util = None  # type: ignore
 
-# 4) Include routers
-app.include_router(albums.router,  tags=["albums"])
-app.include_router(photos.router,  tags=["photos"])
-app.include_router(users.router,   tags=["users"])
-app.include_router(account.router, tags=["auth-extra"])
-app.include_router(stats.router,   tags=["stats"])
-
-# 5) Auth models & handlers
-# Try to import your real auth code; if it isn't present yet,
+# Auth models & handlers:
+# Try to import your real auth code; if it's not present yet,
 # define minimal Pydantic models + stub functions so the app runs
 try:
     from app.auth import RegisterIn, LoginIn, register_user, login_user  # type: ignore
@@ -51,13 +29,36 @@ except Exception:
         email: str
         password: str
 
-    def register_user(_: RegisterIn):
+    def register_user(_: "RegisterIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-    def login_user(_: LoginIn):
+    def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-# 6) Misc endpoints
+# 1) Create the FastAPI app BEFORE including routers
+app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
+
+# 2) CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
+    allow_origins=["http://localhost:5173"],  # dev UI
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 3) Include routers
+if util:
+    app.include_router(util.router, tags=["util"])
+
+app.include_router(albums.router,  tags=["albums"])
+app.include_router(photos.router,  tags=["photos"])
+app.include_router(users.router,   tags=["users"])
+app.include_router(account.router, tags=["auth-extra"])
+app.include_router(stats.router,   tags=["stats"])
+
+# 4) Misc endpoints
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}

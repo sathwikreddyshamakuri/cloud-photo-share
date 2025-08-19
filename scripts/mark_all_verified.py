@@ -1,5 +1,6 @@
 # scripts/mark_all_verified.py
-import os, boto3
+import os
+import boto3
 
 REGION = os.getenv("REGION", "us-east-1")
 table = boto3.resource("dynamodb", region_name=REGION).Table("Users")
