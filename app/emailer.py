@@ -1,4 +1,5 @@
-﻿import os
+﻿# app/emailer.py
+import os
 
 EMAIL_MODE = os.getenv("EMAIL_MODE", "console").lower().strip()
 
@@ -14,7 +15,8 @@ def send_email(to: str, subject: str, html: str, reply_to: str | None = None):
         print("TO:", to)
         print("SUBJECT:", subject)
         print("HTML:", html[:500], "..." if len(html) > 500 else "")
-        if reply_to: print("REPLY-TO:", reply_to)
+        if reply_to:
+            print("REPLY-TO:", reply_to)
         print("--- END DEV EMAIL ---\n")
         return {"id": "dev-console", "mode": "console"}
 
