@@ -1,3 +1,5 @@
+![CI](https://github.com/sathwikreddyshamakuri/cloud-photo-share/actions/workflows/ci.yml/badge.svg)
+
 # NuageVault — Private Photo Cloud
 
 NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, open fullscreen, multi-select to download/delete, toggle dark mode, verify email, and view a usage dashboard.
