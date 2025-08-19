@@ -1,16 +1,11 @@
-# app/main.py
-import time
+﻿import time
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# local modules
-from .auth import RegisterIn, LoginIn, register_user, login_user
-from .routers import albums, photos, users, account, stats
-
-#  FastAPI app 
+# Create the app BEFORE including routers
 app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
 
-#  CORS (adjust origins as needed) 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
@@ -20,14 +15,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#  Routers 
+# Routers (now under app/routers)
+from app.routers import albums, photos, users, account, stats
+try:
+    from app.routers import util
+    app.include_router(util.router, tags=["util"])
+except Exception:
+    pass
+
 app.include_router(albums.router,  tags=["albums"])
 app.include_router(photos.router,  tags=["photos"])
 app.include_router(users.router,   tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
-app.include_router(stats.router,   tags=["stats"])   # new dashboard stats
+app.include_router(stats.router,   tags=["stats"])
 
-#  Misc endpoints 
+# Auth (adjust path if your auth module lives elsewhere)
+try:
+    from app.auth import RegisterIn, LoginIn, register_user, login_user  # type: ignore
+except Exception:
+    # If you don't have auth yet, stub the types to avoid import errors
+    from typing import Any
+    RegisterIn = LoginIn = Any
+    def register_user(_: Any): return {"ok": False, "msg": "auth not wired"}
+    def login_user(_: Any):    return {"ok": False, "msg": "auth not wired"}
+
+# Misc endpoints
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
@@ -42,5 +54,4 @@ def login(body: LoginIn):
 
 @app.get("/feed")
 def get_feed(limit: int = 20):
-    """placeholder – extend later if you implement a public feed"""
     return {"photos": []}
