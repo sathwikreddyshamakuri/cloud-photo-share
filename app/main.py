@@ -39,26 +39,41 @@ except Exception:
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-# 1) App
-app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
 
-# 1a) Local static for dev avatars (works when AUTH_BACKEND=memory)
-LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
-(LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
-app.state.local_upload_root = LOCAL_UPLOAD_ROOT
-app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
+# App
 
-# 2) CORS
+VERSION = "0.7.1"
+AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
+PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y61e.vercel.app
+
+app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
+
+# Local static for dev avatars — only when using memory backend
+if AUTH_BACKEND == "memory":
+    LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
+    (LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
+    app.state.local_upload_root = LOCAL_UPLOAD_ROOT
+    app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
+
+
+# CORS
+
+allow_origins = ["http://localhost:5173"]
+if PUBLIC_UI_URL:
+    allow_origins.append(PUBLIC_UI_URL)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
-    allow_origins=["http://localhost:5173"],  # dev UI
+    allow_origins=allow_origins,   # exact origins
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 3) Routers
+
+# Routers
+
 if util:
     app.include_router(util.router, tags=["util"])
 
@@ -68,7 +83,12 @@ app.include_router(users.router,   tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
 app.include_router(stats.router,   tags=["stats"])
 
-# 4) Misc endpoints
+# Misc endpoints
+
+@app.get("/")
+def root():
+    return {"name": "Cloud Photo-Share API", "version": VERSION, "backend": AUTH_BACKEND}
+
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
