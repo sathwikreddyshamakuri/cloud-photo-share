@@ -39,8 +39,8 @@ S3_BUCKET=your-s3-bucket-name
 DYNAMO_USERS=Users
 DYNAMO_ALBUMS=Albums
 DYNAMO_PHOTOS=PhotoMeta
-JWT_SECRET=please-change-to-a-long-random-string
-EMAIL_FROM=noreply@your-domain.com
+JWT_SECRET=
+EMAIL_FROM=noreply@naugevault.com
 AUTO_VERIFY_USERS=1
 ```
 ### Run the API:
@@ -63,7 +63,7 @@ npm run dev
 ```
 ## 🧭 Frontend routes
 
-- / — Landing page (marketing + “Get started” / “Log in” buttons)
+- /Landing page (marketing + “Get started” / “Log in” buttons)
 
 - /login — Login screen (success banner + toast when redirected from signup)
 
@@ -85,7 +85,7 @@ JWT stored in localStorage
 
 S3 object URLs should be signed if you require stricter privacy (current code assumes safe distribution; you can switch to S3 pre-signed URLs/CloudFront signed cookies easily).
 
-SES sandbox requires verified emails; set AUTO_VERIFY_USERS=1 during development if you prefer to skip email verification (not recommended for prod).
+RESEND sandbox requires verified emails; set AUTO_VERIFY_USERS=1 during development if you prefer to skip email verification (not recommended for prod).
 
 ## 🛠 Troubleshooting
 
@@ -113,7 +113,7 @@ Use queries on GSIs (album_id-index). Avoid full table scans in hot paths
       "arn:aws:dynamodb:REGION:ACCOUNT:table/PhotoMeta",
       "arn:aws:dynamodb:REGION:ACCOUNT:table/PhotoMeta/index/album_id-index"
     ]},
-    { "Effect": "Allow", "Action": ["ses:SendEmail","ses:SendRawEmail"], "Resource": "*" }
+    { "Effect": "Allow", "Action": ["Resend:SendEmail","Resend:SendRawEmail"], "Resource": "*" }
   ]
 }
 ```
