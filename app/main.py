@@ -1,20 +1,24 @@
 ﻿# app/main.py
+from __future__ import annotations
+
+import os
 import time
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Import routers at the top (fixes E402)
 from app.routers import albums, photos, users, account, stats
 
-# util router is optional — import if present, else set to None
+# util router is optional — import if present
 try:
     from app.routers import util  # type: ignore
 except Exception:
     util = None  # type: ignore
 
-# Auth models & handlers:
-# Try to import your real auth code; if it's not present yet,
-# define minimal Pydantic models + stub functions so the app runs
+# Try to import your real auth code; otherwise provide stubs
 try:
     from app.auth import RegisterIn, LoginIn, register_user, login_user  # type: ignore
 except Exception:
@@ -35,8 +39,14 @@ except Exception:
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-# 1) Create the FastAPI app BEFORE including routers
+# 1) App
 app = FastAPI(title="Cloud Photo-Share API", version="0.7.1")
+
+# 1a) Local static for dev avatars (works when AUTH_BACKEND=memory)
+LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
+(LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
+app.state.local_upload_root = LOCAL_UPLOAD_ROOT
+app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
 
 # 2) CORS
 app.add_middleware(
@@ -48,7 +58,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 3) Include routers
+# 3) Routers
 if util:
     app.include_router(util.router, tags=["util"])
 
@@ -73,5 +83,4 @@ def login(body: LoginIn):
 
 @app.get("/feed")
 def get_feed(limit: int = 20):
-    # placeholder – extend later if you implement a public feed
     return {"photos": []}
