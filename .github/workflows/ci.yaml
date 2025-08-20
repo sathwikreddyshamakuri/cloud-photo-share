@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]     
+  push:
+    branches: [main]    
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            pip install fastapi uvicorn boto3 pytest httpx
+          fi
+
+      - name: Env (dummy)
+        run: |
+          # region + dummy creds so boto3 won't error
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
+          echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=dummy" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=dummy" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=dummy" >> $GITHUB_ENV
+          echo "AWS_EC2_METADATA_DISABLED=true" >> $GITHUB_ENV
+
+          # app vars your tests expect
+          echo "S3_BUCKET=dummy-bucket" >> $GITHUB_ENV
+          echo "DYNAMO_USERS=Users" >> $GITHUB_ENV
+          echo "DYNAMO_ALBUMS=Albums" >> $GITHUB_ENV
+          echo "DYNAMO_PHOTOS=PhotoMeta" >> $GITHUB_ENV
+
+          echo "JWT_SECRET=testsecret" >> $GITHUB_ENV
+          echo "TOKEN_EXPIRE_MINUTES=60" >> $GITHUB_ENV
+          echo "RESEND_API_KEY=" >> $GITHUB_ENV
+          echo "EMAIL_FROM=No-Reply <ci@example.com>" >> $GITHUB_ENV
+          echo "PUBLIC_UI_URL=http://localhost:5173" >> $GITHUB_ENV
+          echo "AUTO_VERIFY_USERS=1" >> $GITHUB_ENV
+
+      - name: Run tests
+        run: pytest -q
+
+  web:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud-photo-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: cloud-photo-ui/package-lock.json
+
+      - name: Install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck (optional)
+        run: npm run typecheck || true
