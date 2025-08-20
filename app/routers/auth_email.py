@@ -1,7 +1,8 @@
 # app/routers/auth_email.py
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
-import os, time
+import os
+import time
 import boto3
 
 from app.tokens import new_token, digest_token, expiry_ts, now_ts
