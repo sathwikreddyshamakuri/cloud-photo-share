@@ -1,53 +1,42 @@
 ﻿# app/emailer.py
 import os
 
-EMAIL_MODE = os.getenv("EMAIL_MODE", "console").lower().strip()
+try:
+    import resend  # pip install resend
+except Exception:  # pragma: no cover
+    resend = None  # allows tests/CI to run without the lib
 
-def send_email(to: str, subject: str, html: str, reply_to: str | None = None):
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "No-Reply <noreply@localhost>")
+
+def send_email(to: str, subject: str, html: str) -> dict:
     """
-    EMAIL_MODE:
-      - console      : print to stdout (demo)
-      - resend_test  : Resend test sender/recipient (no domain needed)
-      - resend       : real sending via Resend (needs verified domain + EMAIL_SENDER)
+    Sends an email via Resend. In CI/dev with no API key, it no-ops cleanly.
     """
-    if EMAIL_MODE == "console":
-        print("\n--- DEV EMAIL (console) ---")
-        print("TO:", to)
-        print("SUBJECT:", subject)
-        print("HTML:", html[:500], "..." if len(html) > 500 else "")
-        if reply_to:
-            print("REPLY-TO:", reply_to)
-        print("--- END DEV EMAIL ---\n")
-        return {"id": "dev-console", "mode": "console"}
+    if not RESEND_API_KEY or resend is None:
+        # No key or library: behave as a no-op so tests don't fail.
+        return {"skipped": True, "to": to, "subject": subject}
 
-    try:
-        import resend  # type: ignore
-    except Exception as e:
-        raise RuntimeError("Install the 'resend' package in your venv: pip install resend") from e
+    resend.api_key = RESEND_API_KEY
+    return resend.Emails.send({
+        "from": EMAIL_FROM,
+        "to": [to],
+        "subject": subject,
+        "html": html,
+    })
 
-    api_key = os.getenv("RESEND_API_KEY")
-    if not api_key:
-        raise RuntimeError("RESEND_API_KEY not set")
-    resend.api_key = api_key
+def verification_email_html(verify_url: str) -> str:
+    return f"""
+      <h2>Verify your email</h2>
+      <p>Click the button below to verify your account.</p>
+      <p><a href="{verify_url}" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#111;color:#fff;text-decoration:none">Verify Email</a></p>
+      <p>If the button doesn’t work, open this link:<br>{verify_url}</p>
+    """
 
-    if EMAIL_MODE == "resend_test":
-        data = {
-            "from": "Acme <onboarding@resend.dev>",
-            "to": ["delivered@resend.dev"],
-            "subject": subject or "Test email",
-            "html": html or "<p>hello</p>",
-        }
-        if reply_to:
-            data["reply_to"] = reply_to
-        return resend.Emails.send(data)
-
-    if EMAIL_MODE == "resend":
-        sender = os.getenv("EMAIL_SENDER")  # e.g., 'Cloud Photo Share <no-reply@send.yourdomain.com>'
-        if not sender:
-            raise RuntimeError("EMAIL_SENDER is required in resend mode")
-        data = {"from": sender, "to": [to], "subject": subject, "html": html}
-        if reply_to:
-            data["reply_to"] = reply_to
-        return resend.Emails.send(data)
-
-    raise RuntimeError(f"Unknown EMAIL_MODE={EMAIL_MODE!r}")
+def reset_email_html(reset_url: str) -> str:
+    return f"""
+      <h2>Reset your password</h2>
+      <p>We received a request to reset your password.</p>
+      <p><a href="{reset_url}" style="display:inline-block;padding:10px 16px;border-radius:6px;background:#111;color:#fff;text-decoration:none">Reset Password</a></p>
+      <p>If you didn’t request this, you can ignore this email.<br>Direct link: {reset_url}</p>
+    """

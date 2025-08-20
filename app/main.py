@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # Import routers at the top (fixes E402)
-from app.routers import albums, photos, users, account, stats
+from app.routers import albums, photos, users, account, stats,auth_email
 
 # util router is optional — import if present
 try:
@@ -47,6 +47,7 @@ AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y61e.vercel.app
 
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
+app.include_router(auth_email.router) 
 
 # Local static for dev avatars — only when using memory backend
 if AUTH_BACKEND == "memory":
