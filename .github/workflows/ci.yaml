@@ -33,11 +33,20 @@ jobs:
 
       - name: Env (dummy)
         run: |
+          # region + dummy creds so boto3 won't error
+          echo "AWS_DEFAULT_REGION=us-east-1" >> $GITHUB_ENV
           echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
+          echo "AWS_ACCESS_KEY_ID=dummy" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=dummy" >> $GITHUB_ENV
+          echo "AWS_SESSION_TOKEN=dummy" >> $GITHUB_ENV
+          echo "AWS_EC2_METADATA_DISABLED=true" >> $GITHUB_ENV
+
+          # app vars your tests expect
           echo "S3_BUCKET=dummy-bucket" >> $GITHUB_ENV
           echo "DYNAMO_USERS=Users" >> $GITHUB_ENV
           echo "DYNAMO_ALBUMS=Albums" >> $GITHUB_ENV
           echo "DYNAMO_PHOTOS=PhotoMeta" >> $GITHUB_ENV
+
           echo "JWT_SECRET=testsecret" >> $GITHUB_ENV
           echo "TOKEN_EXPIRE_MINUTES=60" >> $GITHUB_ENV
           echo "RESEND_API_KEY=" >> $GITHUB_ENV
