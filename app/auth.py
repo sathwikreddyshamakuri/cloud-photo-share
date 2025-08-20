@@ -1,178 +1,277 @@
 # app/auth.py
+from __future__ import annotations
+
+import os
 import time
 import uuid
-import os
-import jwt
-from fastapi import HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
-from passlib.context import CryptContext
-from boto3.dynamodb.conditions import Attr
+from typing import Any, Dict, Optional
 
-from .aws_config import dyna
+import jwt
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from passlib.context import CryptContext
+from pydantic import BaseModel, EmailStr
+
+# boto3 conditions used in Dynamo scan paths (guarded)
+try:
+    from boto3.dynamodb.conditions import Attr  # type: ignore
+except Exception:  # pragma: no cover
+    Attr = None  # type: ignore
+
+# AWS wiring (guarded so memory mode works without AWS)
+try:
+    from .aws_config import dyna
+except Exception:  # pragma: no cover
+    dyna = None  # type: ignore
+
 from .emailer import send_email
 
+
+# Config
+
+AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 AUTO_VERIFY = os.getenv("AUTO_VERIFY_USERS", "0") == "1"
 
-# JWT config
-SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret")
-ALGORITHM  = "HS256"
-TOKEN_TTL  = 60 * 60  # 1 hour
+SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret")  # set a strong one in prod
+ALGORITHM = "HS256"
+TOKEN_TTL = 60 * 60  # 1 hour
 
-pwd_ctx  = CryptContext(schemes=["bcrypt"], deprecated="auto")
+PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL", "")
+
+pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
-table_users  = dyna.Table("Users")
-table_tokens = dyna.Table("Tokens")
+# Dynamo tables (only valid if using dynamo backend)
+table_users = dyna.Table("Users") if dyna else None  # type: ignore
+table_tokens = dyna.Table("Tokens") if dyna else None  # type: ignore
 
-def hash_pw(p: str) -> str:
-    return pwd_ctx.hash(p)
+# In-memory stores for dev (AUTH_BACKEND=memory)
+try:
+    _mem_users  # type: ignore[name-defined]
+except NameError:
+    _mem_users: Dict[str, Dict[str, Any]] = {}
 
-def verify_pw(p: str, h: str) -> bool:
-    return pwd_ctx.verify(p, h)
+try:
+    _mem_tokens  # type: ignore[name-defined]
+except NameError:
+    _mem_tokens: Dict[str, Dict[str, Any]] = {}
 
-def create_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": time.time() + TOKEN_TTL}
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-def decode_token(token: str) -> str:
-    try:
-        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return data["sub"]
-    except jwt.PyJWTError:
-        raise HTTPException(401, "Invalid or expired token")
 
-def new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str:
-    tok = str(uuid.uuid4())
-    expires = int(time.time()) + ttl_seconds
-    table_tokens.put_item(Item={
-        "token": tok,
-        "type": kind,
-        "user_id": user_id,
-        "expires_at": expires,
-    })
-    return tok
-
-def consume_token(token: str, kind: str) -> str:
-    resp = table_tokens.get_item(Key={"token": token})
-    item = resp.get("Item")
-    if not item or item.get("type") != kind or item.get("expires_at", 0) < time.time():
-        raise HTTPException(400, "Invalid or expired token")
-    table_tokens.delete_item(Key={"token": token})
-    return item["user_id"]
+# Models
 
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
 
+
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
 
+
 class ForgotIn(BaseModel):
     email: EmailStr
+
 
 class ResetIn(BaseModel):
     token: str
     new_password: str
 
+
 class VerifyIn(BaseModel):
     token: str
+
 
 class ChangePwdIn(BaseModel):
     current_password: str
     new_password: str
 
+
+
+# Helpers (hashing, JWT)
+
+def hash_pw(p: str) -> str:
+    return pwd_ctx.hash(p)
+
+
+def verify_pw(p: str, h: str) -> bool:
+    return pwd_ctx.verify(p, h)
+
+
+def create_token(user_id: str) -> str:
+    payload = {"sub": user_id, "exp": time.time() + TOKEN_TTL, "scope": "access"}
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_token(token: str) -> str:
+    try:
+        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return str(data["sub"])
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+
 def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
     return decode_token(creds.credentials)
 
+
+def _put_user(item: Dict[str, Any]) -> None:
+    """Store a user in the active backend."""
+    if AUTH_BACKEND == "memory" or not table_users:
+        _mem_users[item["user_id"]] = item
+    else:
+        table_users.put_item(Item=item)  # type: ignore[union-attr]
+
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Public helper for routers."""
+    if AUTH_BACKEND == "memory" or not table_users:
+        return _mem_users.get(user_id)
+    else:
+        resp = table_users.get_item(Key={"user_id": user_id})  # type: ignore[union-attr]
+        return resp.get("Item")
+
+
+def _email_exists(email: str) -> bool:
+    if AUTH_BACKEND == "memory" or not table_users:
+        return any(u.get("email") == email for u in _mem_users.values())
+    # Dynamo scan by email (use a GSI in real prod)
+    resp = table_users.scan(  # type: ignore[union-attr]
+        FilterExpression=Attr("email").eq(email) if Attr else None  # type: ignore[arg-type]
+    )
+    return bool(resp.get("Items"))
+
+
+def _get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    if AUTH_BACKEND == "memory" or not table_users:
+        for u in _mem_users.values():
+            if u.get("email") == email:
+                return u
+        return None
+    resp = table_users.scan(  # type: ignore[union-attr]
+        FilterExpression=Attr("email").eq(email) if Attr else None  # type: ignore[arg-type]
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None
+
+
+def _new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str:
+    tok = str(uuid.uuid4())
+    expires = int(time.time()) + ttl_seconds
+    if AUTH_BACKEND == "memory" or not table_tokens:
+        _mem_tokens[tok] = {"type": kind, "user_id": user_id, "expires_at": expires}
+    else:
+        table_tokens.put_item(  # type: ignore[union-attr]
+            Item={"token": tok, "type": kind, "user_id": user_id, "expires_at": expires}
+        )
+    return tok
+
+
+def _consume_token(token: str, kind: str) -> str:
+    if AUTH_BACKEND == "memory" or not table_tokens:
+        item = _mem_tokens.get(token)
+        if not item or item.get("type") != kind or item.get("expires_at", 0) < time.time():
+            raise HTTPException(status_code=400, detail="Invalid or expired token")
+        _mem_tokens.pop(token, None)
+        return str(item["user_id"])
+    resp = table_tokens.get_item(Key={"token": token})  # type: ignore[union-attr]
+    item = resp.get("Item")
+    if not item or item.get("type") != kind or item.get("expires_at", 0) < time.time():
+        raise HTTPException(status_code=400, detail="Invalid or expired token")
+    table_tokens.delete_item(Key={"token": token})  # type: ignore[union-attr]
+    return str(item["user_id"])
+
+
+# Handlers (register/login/reset/verify)
+
 def register_user(body: RegisterIn):
-    # prevent duplicate email
-    if table_users.scan(FilterExpression=Attr("email").eq(body.email))["Items"]:
-        raise HTTPException(400, "email already registered")
+    if _email_exists(body.email):
+        raise HTTPException(status_code=400, detail="email already registered")
 
     user_id = str(uuid.uuid4())
-    item = {
-        "user_id":        user_id,
-        "email":          body.email,
-        "password_hash":  hash_pw(body.password),
+    item: Dict[str, Any] = {
+        "user_id": user_id,
+        "email": body.email,
+        "password_hash": hash_pw(body.password),
         "email_verified": AUTO_VERIFY,
     }
-    table_users.put_item(Item=item)
+    _put_user(item)
 
     email_sent = False
-    if not AUTO_VERIFY:
-        token = new_one_time_token(user_id, "verify", 24 * 3600)
-        verify_link = f"{os.getenv('PUBLIC_UI_URL', '')}/verify?token={token}"
+    if not AUTO_VERIFY and PUBLIC_UI_URL:
+        token = _new_one_time_token(user_id, "verify", 24 * 3600)
+        verify_link = f"{PUBLIC_UI_URL}/verify?token={token}"
         try:
+            # Keep it minimal to match emailer signature
             send_email(
                 to=body.email,
                 subject="Verify your email",
                 html=f"<p>Click to verify: <a href='{verify_link}'>{verify_link}</a></p>",
-                text=f"Verify: {verify_link}",
             )
             email_sent = True
-        except Exception as e:
-            # Log error but don't block account creation
+        except Exception as e:  # pragma: no cover
             print("EMAIL ERROR:", e)
 
     return {
-        "user_id":     user_id,
-        "email_sent":  email_sent,
+        "user_id": user_id,
+        "email_sent": email_sent,
         "need_verify": not AUTO_VERIFY,
     }
 
+
 def login_user(body: LoginIn):
-    resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
-    if not resp["Items"]:
-        raise HTTPException(401, "user not found")
-
-    user = resp["Items"][0]
-
-    if not verify_pw(body.password, user["password_hash"]):
-        raise HTTPException(401, "bad credentials")
+    user = _get_user_by_email(body.email)
+    if not user or not verify_pw(body.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="bad credentials")
 
     if not AUTO_VERIFY and not user.get("email_verified", False):
-        raise HTTPException(403, "email not verified")
+        raise HTTPException(status_code=403, detail="email not verified")
 
     return {"access_token": create_token(user["user_id"])}
 
+
 def change_password(user_id: str, data: ChangePwdIn):
-    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
-    if not item or not verify_pw(data.current_password, item["password_hash"]):
-        raise HTTPException(401, "wrong password")
+    item = get_user_by_id(user_id)
+    if not item or not verify_pw(data.current_password, item.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="wrong password")
     item["password_hash"] = hash_pw(data.new_password)
-    table_users.put_item(Item=item)
+    _put_user(item)
     return {"msg": "changed"}
 
+
 def forgot_password(body: ForgotIn):
-    resp = table_users.scan(FilterExpression=Attr("email").eq(body.email))
-    if resp["Items"]:
-        user = resp["Items"][0]
-        tok = new_one_time_token(user["user_id"], "reset", 3600)
-        reset_url = f"{os.getenv('PUBLIC_UI_URL', '')}/reset?token={tok}"
-        send_email(
-            to=body.email,
-            subject="Reset your password",
-            html=f"<p>Reset link (1h): <a href='{reset_url}'>{reset_url}</a></p>",
-            text=f"Reset: {reset_url}",
-        )
+    user = _get_user_by_email(body.email)
+    if user:
+        tok = _new_one_time_token(user["user_id"], "reset", 3600)
+        reset_url = f"{PUBLIC_UI_URL}/reset?token={tok}" if PUBLIC_UI_URL else ""
+        if reset_url:
+            try:
+                send_email(
+                    to=body.email,
+                    subject="Reset your password",
+                    html=f"<p>Reset link (1h): <a href='{reset_url}'>{reset_url}</a></p>",
+                )
+            except Exception as e:  # pragma: no cover
+                print("EMAIL ERROR:", e)
     return {"msg": "If that email exists, a link was sent."}
 
+
 def reset_password(body: ResetIn):
-    user_id = consume_token(body.token, "reset")
-    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
+    user_id = _consume_token(body.token, "reset")
+    item = get_user_by_id(user_id)
     if not item:
-        raise HTTPException(404, "user not found")
+        raise HTTPException(status_code=404, detail="user not found")
     item["password_hash"] = hash_pw(body.new_password)
-    table_users.put_item(Item=item)
+    _put_user(item)
     return {"msg": "password updated"}
 
+
 def verify_email(body: VerifyIn):
-    user_id = consume_token(body.token, "verify")
-    item = table_users.get_item(Key={"user_id": user_id}).get("Item")
+    user_id = _consume_token(body.token, "verify")
+    item = get_user_by_id(user_id)
     if not item:
-        raise HTTPException(404, "user not found")
+        raise HTTPException(status_code=404, detail="user not found")
     item["email_verified"] = True
-    table_users.put_item(Item=item)
+    _put_user(item)
     return {"msg": "verified"}
