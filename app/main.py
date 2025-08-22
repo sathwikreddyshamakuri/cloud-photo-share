@@ -9,16 +9,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Import routers at the top (fixes E402)
-from app.routers import albums, photos, users, account, stats,auth_email
+# Routers
+from app.routers import albums, photos, users, account, stats, auth_email
 
-# util router is optional — import if present
 try:
     from app.routers import util  # type: ignore
 except Exception:
     util = None  # type: ignore
 
-# Try to import your real auth code; otherwise provide stubs
+# Auth import (fallback stubs)
 try:
     from app.auth import RegisterIn, LoginIn, register_user, login_user  # type: ignore
 except Exception:
@@ -40,16 +39,43 @@ except Exception:
         return {"ok": False, "msg": "auth not wired"}
 
 
-# App
 
 VERSION = "0.7.1"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y61e.vercel.app
 
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
-app.include_router(auth_email.router) 
+
+
+# CORS (place near top)
+
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "https://cloud-photo-share-y61e.vercel.app",  # your current Vercel app
+    # Add your final NuageVault domain here when you have it:
+    # "https://nuagevault.vercel.app",
+]
+if PUBLIC_UI_URL and PUBLIC_UI_URL not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(PUBLIC_UI_URL)
+
+# Regex to allow Vercel preview deployments, e.g. https://<anything>.vercel.app
+VERCEL_REGEX = r"https://.*\.vercel\.app"
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,              # exact, credential-safe origins
+    allow_origin_regex=VERCEL_REGEX,           # previews / branches
+    allow_credentials=True,                    # cookies/session across sites
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    # Optional: expose headers if you stream downloads, etc.
+    expose_headers=["Content-Disposition"],
+)
+
 
 # Local static for dev avatars — only when using memory backend
+
 if AUTH_BACKEND == "memory":
     LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
     (LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
@@ -57,32 +83,16 @@ if AUTH_BACKEND == "memory":
     app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
 
 
-# CORS
-
-allow_origins = ["http://localhost:5173"]
-if PUBLIC_UI_URL:
-    allow_origins.append(PUBLIC_UI_URL)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"https://cloud-photo-share-[A-Za-z0-9\-]+\.vercel\.app",
-    allow_origins=allow_origins,   # exact origins
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
 # Routers
-
+app.include_router(auth_email.router, tags=["auth-email"])
 if util:
     app.include_router(util.router, tags=["util"])
-
 app.include_router(albums.router,  tags=["albums"])
 app.include_router(photos.router,  tags=["photos"])
 app.include_router(users.router,   tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
 app.include_router(stats.router,   tags=["stats"])
+
 
 # Misc endpoints
 

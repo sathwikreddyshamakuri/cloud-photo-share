@@ -7,6 +7,9 @@ import { ClipboardDocumentIcon } from '@heroicons/react/24/solid';
 import ThemeToggle from '../components/ThemeToggle';
 import api         from '../lib/api';
 
+/* Ensure cross-site cookies (session) are sent with every request */
+api.defaults.withCredentials = true;
+
 /*  types  */
 interface Album {
   album_id : string;
@@ -35,10 +38,7 @@ export default function AlbumsPage() {
 
   /*  run once  */
   useEffect(() => {
-    if (!localStorage.getItem('token')) {
-      navigate('/', { replace: true });            // go to landing page
-      return;
-    }
+    // Don't block on localStorage token; allow cookie-session users too.
     fetchAlbums();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -46,11 +46,12 @@ export default function AlbumsPage() {
   async function fetchAlbums() {
     setLoading(true);
     try {
-      const { data } = await api.get<{ items: Album[] }>('/albums/');
+      const { data } = await api.get<{ items: Album[] }>('/albums/'); // keep trailing slash
       setAlbums(data.items);
       setFiltered(data.items);
     } catch (e: any) {
       if (e.response?.status === 401) {
+        // Not authenticated in either token or cookie → go to landing
         localStorage.removeItem('token');
         navigate('/', { replace: true });
       } else {
