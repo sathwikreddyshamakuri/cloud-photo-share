@@ -2,9 +2,9 @@
 import axios from "axios";
 
 /**
- * Use env var in prod; fall back sensibly in dev.
- * IMPORTANT: On Vercel you must set VITE_API_BASE_URL in Project → Settings → Environment Variables
- * and redeploy, because Vite inlines env vars at build time.
+ * IMPORTANT:
+ * On Vercel, set VITE_API_BASE_URL = https://cloud-photo-share.onrender.com
+ * in Project → Settings → Environment Variables, then redeploy.
  */
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
@@ -17,7 +17,7 @@ const api = axios.create({
   withCredentials: true, // send/receive cookies cross-site
 });
 
-// Optional: keep bearer-token auth working in parallel with cookies
+// Keep token support if you also use bearer auth
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token) config.headers.Authorization = `Bearer ${token}`;

@@ -38,7 +38,6 @@ export default function AlbumsPage() {
 
   /*  run once  */
   useEffect(() => {
-    // Don't block on localStorage token; allow cookie-session users too.
     fetchAlbums();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -51,7 +50,6 @@ export default function AlbumsPage() {
       setFiltered(data.items);
     } catch (e: any) {
       if (e.response?.status === 401) {
-        // Not authenticated in either token or cookie → go to landing
         localStorage.removeItem('token');
         navigate('/', { replace: true });
       } else {
@@ -59,6 +57,16 @@ export default function AlbumsPage() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  /* fetch cover if the stored URL is missing/broken */
+  async function fetchCoverUrl(album_id: string): Promise<string | null> {
+    try {
+      const { data } = await api.get<{ url: string | null }>(`/albums/${album_id}/cover`);
+      return data?.url || null;
+    } catch {
+      return null;
     }
   }
 
@@ -94,8 +102,7 @@ export default function AlbumsPage() {
     if (!title) return;
 
     try {
-      // PATCHED: add trailing slash on ID route
-      await api.put(`/albums/${renamingId}/`, { title });
+      await api.put(`/albums/${renamingId}/`, { title }); // trailing slash
       const upd = albums.map(a => a.album_id === renamingId ? { ...a, title } : a);
       setAlbums(upd);
       setFiltered(upd);
@@ -109,14 +116,13 @@ export default function AlbumsPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this album?')) return;
     try {
-      // PATCHED: add trailing slash on ID route
-      await api.delete(`/albums/${id}/`);
+      await api.delete(`/albums/${id}/`); // trailing slash
       const upd = albums.filter(a => a.album_id !== id);
       setAlbums(upd);
       setFiltered(upd);
       toast.success('Album deleted');
-    } catch {
-      toast.error('Delete failed');
+    } catch (e:any) {
+      toast.error(e.response?.data?.detail || 'Delete failed');
     }
   }
 
@@ -185,8 +191,18 @@ export default function AlbumsPage() {
                className="relative bg-white dark:bg-slate-700 rounded shadow hover:shadow-lg transition">
             <Link to={`/albums/${alb.album_id}`}>
               {alb.cover_url ? (
-                <img src={alb.cover_url} alt={alb.title}
-                     className="w-full aspect-[4/3] object-cover rounded-t" />
+                <img
+                  src={alb.cover_url}
+                  alt={alb.title}
+                  className="w-full aspect-[4/3] object-cover rounded-t"
+                  onError={async (e) => {
+                    const el = e.currentTarget as HTMLImageElement;
+                    if ((el as any).__coverTried) return;
+                    (el as any).__coverTried = true;
+                    const signed = await fetchCoverUrl(alb.album_id);
+                    if (signed) el.src = signed;
+                  }}
+                />
               ) : (
                 <div className="w-full aspect-[4/3] bg-gray-200 dark:bg-slate-600 flex items-center justify-center rounded-t">
                   <span className="text-gray-500 dark:text-slate-300">No preview</span>
