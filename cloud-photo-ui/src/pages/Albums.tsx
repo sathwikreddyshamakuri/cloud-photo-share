@@ -94,7 +94,8 @@ export default function AlbumsPage() {
     if (!title) return;
 
     try {
-      await api.put(`/albums/${renamingId}`, { title });
+      // PATCHED: add trailing slash on ID route
+      await api.put(`/albums/${renamingId}/`, { title });
       const upd = albums.map(a => a.album_id === renamingId ? { ...a, title } : a);
       setAlbums(upd);
       setFiltered(upd);
@@ -108,7 +109,8 @@ export default function AlbumsPage() {
   async function handleDelete(id: string) {
     if (!confirm('Delete this album?')) return;
     try {
-      await api.delete(`/albums/${id}`);
+      // PATCHED: add trailing slash on ID route
+      await api.delete(`/albums/${id}/`);
       const upd = albums.filter(a => a.album_id !== id);
       setAlbums(upd);
       setFiltered(upd);
