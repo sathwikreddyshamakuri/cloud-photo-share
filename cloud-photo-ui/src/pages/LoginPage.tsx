@@ -5,7 +5,6 @@ import toast                                   from 'react-hot-toast';
 import logo                                    from '../assets/nuagevault-logo.png';
 import api                                     from '../lib/api';
 
-
 export default function LoginPage() {
   const navigate          = useNavigate();
   const { state }         = useLocation();
@@ -15,29 +14,47 @@ export default function LoginPage() {
   useEffect(() => {
     if (flashMsg) toast.success(flashMsg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);                     // run once – not every re-render
+  }, []); // run once
 
-  /* already authenticated? → skip */
-  if (localStorage.getItem('token')) navigate('/albums', { replace: true });
+  /* already authenticated via token? → skip (cookie sessions will be handled after submit) */
+  useEffect(() => {
+    if (localStorage.getItem('token')) {
+      navigate('/albums', { replace: true });
+    }
+  }, [navigate]);
 
   /* form state */
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState<string | null>(null);
+  const [loading,  setLoading]  = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setLoading(true);
     try {
-      const { data } = await api.post<{ access_token: string }>('/login', { email, password });
-      localStorage.setItem('token', data.access_token);
-      window.dispatchEvent(new Event('token-change'));
+      // IMPORTANT: ensure credentials are sent for cookie-based auth
+      const res = await api.post<{ access_token?: string }>('/login', { email, password }, { withCredentials: true });
+
+      const token = res.data?.access_token;
+      if (token) {
+        localStorage.setItem('token', token);
+        window.dispatchEvent(new Event('token-change'));
+      } else {
+        // No token returned → cookie session path. Make sure we don't keep stale tokens.
+        localStorage.removeItem('token');
+        window.dispatchEvent(new Event('token-change'));
+      }
+
+      toast.success('Logged in');
       navigate('/albums', { replace: true });
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(err?.response?.data?.detail || 'Login failed');
+    } finally {
+      setLoading(false);
     }
   }
-
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-slate-800 p-4">
@@ -51,14 +68,14 @@ export default function LoginPage() {
           <img src={logo} alt="NuageVault" className="h-16 w-16 rounded shadow-sm" />
           <h2 className="text-2xl font-semibold">Log in</h2>
 
-          {/* inline success banner  */}
+          {/* inline success banner */}
           {flashMsg && (
             <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
               {flashMsg}
             </p>
           )}
 
-          {/* inline error banner  */}
+          {/* inline error banner */}
           {error && (
             <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
               {error}
@@ -89,9 +106,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition"
+            disabled={loading}
+            className="w-full bg-indigo-600 text-white py-2 rounded hover:bg-indigo-500 transition disabled:opacity-60"
           >
-            Log In
+            {loading ? 'Signing in…' : 'Log In'}
           </button>
 
           <div className="flex justify-between w-full text-sm">
