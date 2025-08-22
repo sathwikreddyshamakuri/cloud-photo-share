@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -45,35 +46,56 @@ PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y6
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
 
 
-# CORS
-
-ALLOWED_ORIGINS = [
+ALLOWED_ORIGINS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://cloud-photo-share-y61e.vercel.app",
-]
-# Allow preview deploys too
-VERCEL_REGEX = r"https://.*\.vercel\.app"
+}
+if PUBLIC_UI_URL:
+    ALLOWED_ORIGINS.add(PUBLIC_UI_URL)
 
-if PUBLIC_UI_URL and PUBLIC_UI_URL not in ALLOWED_ORIGINS:
-    ALLOWED_ORIGINS.append(PUBLIC_UI_URL)
+VERCEL_REGEX = r"^https://.*\.vercel\.app$"
+VERCEL_RE = re.compile(VERCEL_REGEX)
+
+ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+# List explicit headers to avoid any framework/version quirks
+ALLOWED_HEADERS = "content-type, authorization, x-requested-with"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=list(ALLOWED_ORIGINS),
     allow_origin_regex=VERCEL_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["*"],  # middleware will reflect requested headers
     expose_headers=["Content-Disposition"],
 )
 
+def _is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    return origin in ALLOWED_ORIGINS or bool(VERCEL_RE.match(origin))
 
-# Universal OPTIONS preflight (lets CORS middleware attach headers)
+def _cors_preflight_response(req: Request) -> Response:
+    origin = req.headers.get("origin")
+    acrh = req.headers.get("access-control-request-headers", "")
+    headers = {
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": ALLOWED_METHODS,
+        "Access-Control-Max-Age": "86400",
+        "Vary": "Origin",
+    }
+    # echo requested headers or fall back to our list
+    headers["Access-Control-Allow-Headers"] = acrh or ALLOWED_HEADERS
+    if _is_allowed_origin(origin):
+        headers["Access-Control-Allow-Origin"] = origin
+    # 204 with headers—no body
+    return Response(status_code=204, headers=headers)
+
 
 @app.options("/{rest_of_path:path}")
-def preflight_cors(rest_of_path: str):
-    return Response(status_code=204)
+def preflight_cors(rest_of_path: str, request: Request):
+    return _cors_preflight_response(request)
 
 
 if AUTH_BACKEND == "memory":
@@ -82,8 +104,6 @@ if AUTH_BACKEND == "memory":
     app.state.local_upload_root = LOCAL_UPLOAD_ROOT
     app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
 
-
-# Routers
 
 app.include_router(auth_email.router, tags=["auth-email"])
 if util:
@@ -106,8 +126,6 @@ def register(body: RegisterIn):
 def login(body: LoginIn):
     return login_user(body)
 
-
-# Misc endpoints
 
 @app.get("/")
 def root():
