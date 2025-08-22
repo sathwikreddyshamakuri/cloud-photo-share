@@ -1,9 +1,10 @@
 # app/routers/covers.py
-import os, boto3
+import os
+import boto3
 from fastapi import APIRouter, Depends, HTTPException
 from boto3.dynamodb.conditions import Key
 from app.s3util import sign_key
-from app.auth import get_current_user  # adjust if your path differs
+from app.auth import get_current_user  # adjust path if needed
 
 router = APIRouter(prefix="/albums", tags=["covers"])
 
