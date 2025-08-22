@@ -1,5 +1,6 @@
 # app/s3util.py
-import os, boto3
+import os
+import boto3
 
 S3_BUCKET = os.getenv("S3_BUCKET")
 _s3 = boto3.client("s3", region_name=os.getenv("AWS_REGION", "us-east-1"))

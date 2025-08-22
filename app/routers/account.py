@@ -1,6 +1,7 @@
-# inside app/routers/account.py
-from fastapi import APIRouter, Depends, Response, HTTPException
-import os, boto3
+# app/routers/account.py
+from fastapi import APIRouter, Depends, Response
+import os
+import boto3
 from boto3.dynamodb.conditions import Key
 from app.auth import get_current_user
 
