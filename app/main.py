@@ -5,13 +5,12 @@ import os
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # Routers
-from app.routers import albums, photos, users, account, stats, auth_email
-
+from app.routers import albums, photos, users, account, stats, auth_email, covers
 try:
     from app.routers import util  # type: ignore
 except Exception:
@@ -39,7 +38,6 @@ except Exception:
         return {"ok": False, "msg": "auth not wired"}
 
 
-
 VERSION = "0.7.1"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y61e.vercel.app
@@ -47,34 +45,36 @@ PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y6
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
 
 
-# CORS (place near top)
+# CORS
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://cloud-photo-share-y61e.vercel.app",  # your current Vercel app
-    # Add your final NuageVault domain here when you have it:
-    # "https://nuagevault.vercel.app",
+    "https://cloud-photo-share-y61e.vercel.app",
 ]
+# Allow preview deploys too
+VERCEL_REGEX = r"https://.*\.vercel\.app"
+
 if PUBLIC_UI_URL and PUBLIC_UI_URL not in ALLOWED_ORIGINS:
     ALLOWED_ORIGINS.append(PUBLIC_UI_URL)
 
-# Regex to allow Vercel preview deployments, e.g. https://<anything>.vercel.app
-VERCEL_REGEX = r"https://.*\.vercel\.app"
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,              # exact, credential-safe origins
-    allow_origin_regex=VERCEL_REGEX,           # previews / branches
-    allow_credentials=True,                    # cookies/session across sites
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=VERCEL_REGEX,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    # Optional: expose headers if you stream downloads, etc.
     expose_headers=["Content-Disposition"],
 )
 
 
-# Local static for dev avatars — only when using memory backend
+# Universal OPTIONS preflight (lets CORS middleware attach headers)
+
+@app.options("/{rest_of_path:path}")
+def preflight_cors(rest_of_path: str):
+    return Response(status_code=204)
+
 
 if AUTH_BACKEND == "memory":
     LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
@@ -84,14 +84,27 @@ if AUTH_BACKEND == "memory":
 
 
 # Routers
+
 app.include_router(auth_email.router, tags=["auth-email"])
 if util:
     app.include_router(util.router, tags=["util"])
-app.include_router(albums.router,  tags=["albums"])
-app.include_router(photos.router,  tags=["photos"])
-app.include_router(users.router,   tags=["users"])
+app.include_router(albums.router, tags=["albums"])
+app.include_router(photos.router, tags=["photos"])
+app.include_router(users.router, tags=["users"])
 app.include_router(account.router, tags=["auth-extra"])
-app.include_router(stats.router,   tags=["stats"])
+app.include_router(stats.router, tags=["stats"])
+app.include_router(covers.router, tags=["covers"])
+
+
+@app.post("/register")
+@app.post("/register/")
+def register(body: RegisterIn):
+    return register_user(body)
+
+@app.post("/login")
+@app.post("/login/")
+def login(body: LoginIn):
+    return login_user(body)
 
 
 # Misc endpoints
@@ -103,14 +116,6 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
-
-@app.post("/register")
-def register(body: RegisterIn):
-    return register_user(body)
-
-@app.post("/login")
-def login(body: LoginIn):
-    return login_user(body)
 
 @app.get("/feed")
 def get_feed(limit: int = 20):
