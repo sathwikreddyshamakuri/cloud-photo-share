@@ -1,6 +1,7 @@
 # app/routers/albums.py
 import uuid
 import time
+from app.auth import get_current_user
 from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException, Depends, status, Body

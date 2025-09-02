@@ -51,7 +51,8 @@ export default function AlbumsPage() {
     } catch (e: any) {
       if (e.response?.status === 401) {
         localStorage.removeItem('token');
-        navigate('/', { replace: true });
+        window.dispatchEvent(new Event('token-change'));
+        navigate('/login', { replace: true });
       } else {
         setError('Failed to load albums');
       }
@@ -194,6 +195,7 @@ export default function AlbumsPage() {
                 <img
                   src={alb.cover_url}
                   alt={alb.title}
+                  loading="lazy"
                   className="w-full aspect-[4/3] object-cover rounded-t"
                   onError={async (e) => {
                     const el = e.currentTarget as HTMLImageElement;
