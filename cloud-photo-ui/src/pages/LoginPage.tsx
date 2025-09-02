@@ -6,17 +6,17 @@ import logo                                    from '../assets/nuagevault-logo.p
 import api                                     from '../lib/api';
 
 export default function LoginPage() {
-  const navigate          = useNavigate();
-  const { state }         = useLocation();
+  const navigate = useNavigate();
+  const { state } = useLocation();
   const flashMsg: string | undefined = (state as any)?.msg;
 
-  /* show toast once on first paint */
+  /* toast once on first paint */
   useEffect(() => {
     if (flashMsg) toast.success(flashMsg);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
+  }, []);
 
-  /* already authenticated via token? → skip (cookie sessions will be handled after submit) */
+  /* if already authenticated, skip */
   useEffect(() => {
     if (localStorage.getItem('token')) {
       navigate('/albums', { replace: true });
@@ -34,18 +34,21 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      // IMPORTANT: ensure credentials are sent for cookie-based auth
-      const res = await api.post<{ access_token?: string }>('/login', { email, password }, { withCredentials: true });
+      // supports cookie sessions + bearer tokens
+      const res = await api.post<{ access_token?: string }>(
+        '/login',
+        { email, password },
+        { withCredentials: true }
+      );
 
       const token = res.data?.access_token;
       if (token) {
         localStorage.setItem('token', token);
-        window.dispatchEvent(new Event('token-change'));
       } else {
-        // No token returned → cookie session path. Make sure we don't keep stale tokens.
+        // cookie-only path; ensure we don't keep stale tokens
         localStorage.removeItem('token');
-        window.dispatchEvent(new Event('token-change'));
       }
+      window.dispatchEvent(new Event('token-change'));
 
       toast.success('Logged in');
       navigate('/albums', { replace: true });
@@ -68,14 +71,11 @@ export default function LoginPage() {
           <img src={logo} alt="NuageVault" className="h-16 w-16 rounded shadow-sm" />
           <h2 className="text-2xl font-semibold">Log in</h2>
 
-          {/* inline success banner */}
           {flashMsg && (
             <p className="w-full text-sm text-green-700 bg-green-50 border border-green-200 rounded p-2">
               {flashMsg}
             </p>
           )}
-
-          {/* inline error banner */}
           {error && (
             <p className="w-full text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2">
               {error}

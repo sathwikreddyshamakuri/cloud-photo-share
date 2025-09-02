@@ -39,13 +39,17 @@ except Exception:
         return {"ok": False, "msg": "auth not wired"}
 
 
-VERSION = "0.7.1"
+VERSION = "0.7.2"  # bumped
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
-PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL")  # e.g., https://cloud-photo-share-y61e.vercel.app
+
+
+_public_ui = (os.getenv("PUBLIC_UI_URL") or "").strip().rstrip("/")
+PUBLIC_UI_URL = _public_ui or None
 
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
 
 
+# Exact origins we know about:
 ALLOWED_ORIGINS = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -54,45 +58,47 @@ ALLOWED_ORIGINS = {
 if PUBLIC_UI_URL:
     ALLOWED_ORIGINS.add(PUBLIC_UI_URL)
 
+# Allow any *.vercel.app (handy for preview deployments)
 VERCEL_REGEX = r"^https://.*\.vercel\.app$"
 VERCEL_RE = re.compile(VERCEL_REGEX)
 
+# Only used by our manual preflight below
 ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-# List explicit headers to avoid any framework/version quirks
-ALLOWED_HEADERS = "content-type, authorization, x-requested-with"
+ALLOWED_HEADERS_FALLBACK = "content-type, authorization, x-requested-with"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
-    allow_origin_regex=VERCEL_REGEX,
-    allow_credentials=True,
+    allow_origin_regex=VERCEL_REGEX,       # regex + explicit list
+    allow_credentials=True,                # needed for cookies
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],  # middleware will reflect requested headers
-    expose_headers=["Content-Disposition"],
+    allow_headers=["*"],                   # let middleware reflect requested headers
+    expose_headers=["Content-Disposition"] # for downloads
 )
 
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
+    # match exact or *.vercel.app
     return origin in ALLOWED_ORIGINS or bool(VERCEL_RE.match(origin))
 
 def _cors_preflight_response(req: Request) -> Response:
     origin = req.headers.get("origin")
-    acrh = req.headers.get("access-control-request-headers", "")
+    acrh   = req.headers.get("access-control-request-headers", "")
     headers = {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": ALLOWED_METHODS,
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin",
+        # reflect requested headers, or use sane fallback
+        "Access-Control-Allow-Headers": acrh or ALLOWED_HEADERS_FALLBACK,
     }
-    # echo requested headers or fall back to our list
-    headers["Access-Control-Allow-Headers"] = acrh or ALLOWED_HEADERS
     if _is_allowed_origin(origin):
         headers["Access-Control-Allow-Origin"] = origin
     # 204 with headers—no body
     return Response(status_code=204, headers=headers)
 
-
+# Single catch-all preflight route (optional; CORSMiddleware can also handle OPTIONS)
 @app.options("/{rest_of_path:path}")
 def preflight_cors(rest_of_path: str, request: Request):
     return _cors_preflight_response(request)
@@ -135,6 +141,11 @@ def root():
 def health():
     return {"status": "ok", "timestamp": time.time()}
 
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "timestamp": time.time()}
+
+# Example placeholder feed (safe to keep)
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}

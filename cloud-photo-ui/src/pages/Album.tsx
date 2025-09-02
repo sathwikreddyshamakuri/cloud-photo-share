@@ -56,15 +56,17 @@ export default function AlbumPage() {
       });
       setPhotos(data.items);
     } catch (e:any) {
-      if (e.response?.status === 401) { localStorage.removeItem('token'); nav('/login'); }
-      else setError('Failed to load photos');
+      if (e.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.dispatchEvent(new Event('token-change'));
+        nav('/login', { replace: true });
+      } else setError('Failed to load photos');
     } finally { setLoading(false); }
   }, [albumId, nav]);
 
   /* load once */
   useEffect(() => {
-    if (!localStorage.getItem('token')) { nav('/login'); return; }
-    fetchPhotos();
+    fetchPhotos();   // no localStorage token check here (router guards already)
   }, [fetchPhotos]);
 
   /* upload  */
@@ -115,7 +117,7 @@ export default function AlbumPage() {
   if (loading) return <p className="p-8">Loading…</p>;
   if (error)   return <p className="p-8 text-red-600">{error}</p>;
 
-  /*UI  */
+  /* UI  */
   return (
     <div className="p-8 bg-slate-50 dark:bg-slate-800 min-h-screen">
       <div className="mb-4 flex items-center justify-between">
@@ -175,7 +177,9 @@ export default function AlbumPage() {
               />
             )}
             <img
-              src={p.url} alt=""
+              src={p.url}
+              alt=""
+              loading="lazy"
               className="h-48 w-full object-cover rounded-lg shadow cursor-pointer"
               onClick={()=>{
                 if(selecting){
