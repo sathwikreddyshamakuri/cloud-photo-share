@@ -1,3 +1,4 @@
+from ..auth import current_user
 # app/routers/covers.py
 import os
 import boto3
@@ -12,7 +13,7 @@ _dynamo = boto3.resource("dynamodb", region_name=os.getenv("AWS_REGION", "us-eas
 _photo_table = _dynamo.Table(os.getenv("DDB_PHOTO_TABLE", "PhotoMeta"))
 
 @router.get("/{album_id}/cover")
-def get_album_cover(album_id: str, user=Depends(get_current_user)):
+def get_album_cover(album_id: str, _: str = Depends(current_user)):
     # latest photo in this album (GSI: album_id-index)
     try:
         q = _photo_table.query(
@@ -38,3 +39,4 @@ def get_album_cover(album_id: str, user=Depends(get_current_user)):
         return {"url": url}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"s3 sign failed: {e}")
+
