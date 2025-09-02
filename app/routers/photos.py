@@ -13,7 +13,7 @@ table_albums = dyna.Table("Albums")
 table_photos = dyna.Table("PhotoMeta")
 
 
-# ───────────────────────────── upload photo ────────────────────────────────
+
 @router.post("/photos/", status_code=status.HTTP_201_CREATED)
 def upload_photo(
     album_id: str = Query(...),
@@ -24,9 +24,16 @@ def upload_photo(
     if not alb or alb["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    ext = file.filename.rsplit(".", 1)[-1]
+    ext = (file.filename or "file").rsplit(".", 1)[-1]
     key = f"{album_id}/{uuid.uuid4()}.{ext}"
-    s3.upload_fileobj(file.file, S3_BUCKET, key)
+
+    # Ensure browser can render correctly by setting ContentType
+    s3.upload_fileobj(
+        file.file,
+        S3_BUCKET,
+        key,
+        ExtraArgs={"ContentType": file.content_type or "application/octet-stream"},
+    )
 
     photo_id = str(uuid.uuid4())
     now = int(time.time())
@@ -53,7 +60,7 @@ def upload_photo(
     }
 
 
-# ───────────────────────────── list photos ────────────────────────────────
+
 @router.get("/photos/")
 def list_photos(
     album_id: str = Query(...),
@@ -65,7 +72,7 @@ def list_photos(
     if not alb or alb["owner"] != user_id:
         raise HTTPException(404, "Album not found")
 
-    # Fetch *all* photos for this album (single test-friendly approach)
+    # Fetch *all* photos for this album
     resp = table_photos.query(
         IndexName="album_id-index",
         KeyConditionExpression=Key("album_id").eq(album_id),
@@ -104,7 +111,7 @@ def list_photos(
     return {"items": page, "next_key": next_key}
 
 
-# ───────────────────────────── delete photo ───────────────────────────────
+
 @router.delete("/photos/{photo_id}", status_code=204)
 def delete_photo(photo_id: str, user_id: str = Depends(current_user)):
     item = table_photos.get_item(Key={"photo_id": photo_id}).get("Item")
