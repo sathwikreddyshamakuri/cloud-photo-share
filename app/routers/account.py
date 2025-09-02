@@ -10,6 +10,5 @@ def get_me(user_id: str = Depends(current_user)):
 
 @router.delete("/", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(user_id: str = Depends(current_user)):
-    # TODO: add real deletion of user data if/when you want.
-    # Returning nothing with 204 is valid.
+    # TODO: implement data deletion if needed
     return

@@ -36,7 +36,7 @@ except Exception:
 VERSION = "0.7.3"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 
-# Normalize PUBLIC_UI_URL (strip spaces and trailing slash)
+
 _public_ui = (os.getenv("PUBLIC_UI_URL") or "").strip().rstrip("/")
 PUBLIC_UI_URL = _public_ui or None
 
@@ -51,29 +51,28 @@ ALLOWED_ORIGINS: set[str] = {
 if PUBLIC_UI_URL:
     ALLOWED_ORIGINS.add(PUBLIC_UI_URL)
 
-# Allow any *.vercel.app (useful for preview deployments)
+# Allow any *.vercel.app (for preview deploys)
 VERCEL_REGEX = r"^https://.*\.vercel\.app$"
 VERCEL_RE = re.compile(VERCEL_REGEX)
 
-# Used by manual preflight below
+# Preflight helpers
 ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
 ALLOWED_HEADERS_FALLBACK = "content-type, authorization, x-requested-with"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
-    allow_origin_regex=VERCEL_REGEX,  # regex + explicit list
-    allow_credentials=True,           # needed for cookies
+    allow_origin_regex=VERCEL_REGEX,
+    allow_credentials=True,  # cookies
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],              # let middleware reflect requested headers
-    expose_headers=["Content-Disposition"],  # for downloads
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
-    # match exact or *.vercel.app
     return origin in ALLOWED_ORIGINS or bool(VERCEL_RE.match(origin))
 
 
@@ -85,16 +84,13 @@ def _cors_preflight_response(req: Request) -> Response:
         "Access-Control-Allow-Methods": ALLOWED_METHODS,
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin",
-        # reflect requested headers, or use sane fallback
         "Access-Control-Allow-Headers": acrh or ALLOWED_HEADERS_FALLBACK,
     }
     if _is_allowed_origin(origin):
         headers["Access-Control-Allow-Origin"] = origin
-    # 204 with headers—no body
     return Response(status_code=204, headers=headers)
 
 
-# Single catch-all preflight route (optional; CORSMiddleware can also handle OPTIONS)
 @app.options("/{rest_of_path:path}")
 def preflight_cors(rest_of_path: str, request: Request):
     return _cors_preflight_response(request)
@@ -106,7 +102,6 @@ if AUTH_BACKEND == "memory":
     (LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
     app.state.local_upload_root = LOCAL_UPLOAD_ROOT
     app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
-
 
 
 def _import_optional(modpath: str):
@@ -132,6 +127,7 @@ def _try_include(mod, tag: str):
         print(f"[BOOT] Skipping router {tag}: {e}")
 
 
+
 albums = _import_optional("app.routers.albums")
 photos = _import_optional("app.routers.photos")
 users = _import_optional("app.routers.users")
@@ -141,15 +137,15 @@ auth_email = _import_optional("app.routers.auth_email")
 covers = _import_optional("app.routers.covers")
 util = _import_optional("app.routers.util")
 
+
 _try_include(auth_email, "auth-email")
 _try_include(util, "util")
 _try_include(albums, "albums")
 _try_include(photos, "photos")
 _try_include(users, "users")
-_try_include(account, "auth-extra")
+_try_include(account, "auth-extra")  # guarded, fixes Render error
 _try_include(stats, "stats")
 _try_include(covers, "covers")
-
 
 
 @app.post("/register")
@@ -179,7 +175,7 @@ def healthz():
     return {"status": "ok", "timestamp": time.time()}
 
 
-# Example placeholder feed (safe to keep)
+
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}
