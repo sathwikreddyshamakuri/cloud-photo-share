@@ -1,4 +1,4 @@
-# app/main.py
+﻿# app/main.py
 from __future__ import annotations
 
 import os
@@ -105,7 +105,7 @@ if AUTH_BACKEND == "memory":
 
 
 def _import_optional(modpath: str):
-    """Import a module if available; return None on failure (don�t crash boot)."""
+    """Import a module if available; return None on failure (don’t crash boot)."""
     try:
         return import_module(modpath)
     except Exception as e:
@@ -179,3 +179,4 @@ def healthz():
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}
+
