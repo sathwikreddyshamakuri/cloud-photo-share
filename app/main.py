@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # Routers
-from app.routers import albums, photos, users, account, stats, auth_email, covers
+from app.routers import albums, photos, users, stats, auth_email, covers
 try:
     from app.routers import util  # type: ignore
 except Exception:
@@ -117,7 +117,7 @@ if util:
 app.include_router(albums.router, tags=["albums"])
 app.include_router(photos.router, tags=["photos"])
 app.include_router(users.router, tags=["users"])
-app.include_router(account.router, tags=["auth-extra"])
+
 app.include_router(stats.router, tags=["stats"])
 app.include_router(covers.router, tags=["covers"])
 
@@ -149,3 +149,4 @@ def healthz():
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}
+
