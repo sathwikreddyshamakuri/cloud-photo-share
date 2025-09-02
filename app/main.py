@@ -4,22 +4,16 @@ from __future__ import annotations
 import os
 import re
 import time
+from importlib import import_module
 from pathlib import Path
 
-from fastapi import FastAPI, Response, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-# Routers
-from app.routers import albums, photos, users, account, stats, auth_email, covers
-try:
-    from app.routers import util  # type: ignore
-except Exception:
-    util = None  # type: ignore
 
-# Auth import (fallback stubs)
 try:
-    from app.auth import RegisterIn, LoginIn, register_user, login_user  # type: ignore
+    from app.auth import LoginIn, RegisterIn, login_user, register_user  # type: ignore
 except Exception:
     from pydantic import BaseModel
 
@@ -39,7 +33,7 @@ except Exception:
         return {"ok": False, "msg": "auth not wired"}
 
 
-VERSION = "0.7.2"  # bumped
+VERSION = "0.7.3"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 
 
@@ -49,8 +43,7 @@ PUBLIC_UI_URL = _public_ui or None
 app = FastAPI(title="Cloud Photo-Share API", version=VERSION)
 
 
-# Exact origins we know about:
-ALLOWED_ORIGINS = {
+ALLOWED_ORIGINS: set[str] = {
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://cloud-photo-share-y61e.vercel.app",
@@ -58,50 +51,50 @@ ALLOWED_ORIGINS = {
 if PUBLIC_UI_URL:
     ALLOWED_ORIGINS.add(PUBLIC_UI_URL)
 
-# Allow any *.vercel.app (handy for preview deployments)
+# Allow any *.vercel.app (for preview deploys)
 VERCEL_REGEX = r"^https://.*\.vercel\.app$"
 VERCEL_RE = re.compile(VERCEL_REGEX)
 
-# Only used by our manual preflight below
+# Preflight helpers
 ALLOWED_METHODS = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
 ALLOWED_HEADERS_FALLBACK = "content-type, authorization, x-requested-with"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
-    allow_origin_regex=VERCEL_REGEX,       # regex + explicit list
-    allow_credentials=True,                # needed for cookies
+    allow_origin_regex=VERCEL_REGEX,
+    allow_credentials=True,  # cookies
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],                   # let middleware reflect requested headers
-    expose_headers=["Content-Disposition"] # for downloads
+    allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
+
 
 def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
-    # match exact or *.vercel.app
     return origin in ALLOWED_ORIGINS or bool(VERCEL_RE.match(origin))
+
 
 def _cors_preflight_response(req: Request) -> Response:
     origin = req.headers.get("origin")
-    acrh   = req.headers.get("access-control-request-headers", "")
+    acrh = req.headers.get("access-control-request-headers", "")
     headers = {
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": ALLOWED_METHODS,
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin",
-        # reflect requested headers, or use sane fallback
         "Access-Control-Allow-Headers": acrh or ALLOWED_HEADERS_FALLBACK,
     }
     if _is_allowed_origin(origin):
         headers["Access-Control-Allow-Origin"] = origin
-    # 204 with headers—no body
     return Response(status_code=204, headers=headers)
 
-# Single catch-all preflight route (optional; CORSMiddleware can also handle OPTIONS)
+
 @app.options("/{rest_of_path:path}")
 def preflight_cors(rest_of_path: str, request: Request):
     return _cors_preflight_response(request)
+
 
 
 if AUTH_BACKEND == "memory":
@@ -111,21 +104,55 @@ if AUTH_BACKEND == "memory":
     app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
 
 
-app.include_router(auth_email.router, tags=["auth-email"])
-if util:
-    app.include_router(util.router, tags=["util"])
-app.include_router(albums.router, tags=["albums"])
-app.include_router(photos.router, tags=["photos"])
-app.include_router(users.router, tags=["users"])
-app.include_router(account.router, tags=["auth-extra"])
-app.include_router(stats.router, tags=["stats"])
-app.include_router(covers.router, tags=["covers"])
+def _import_optional(modpath: str):
+    """Import a module if available; return None on failure (don’t crash boot)."""
+    try:
+        return import_module(modpath)
+    except Exception as e:
+        print(f"[BOOT] Optional router '{modpath}' not loaded: {e}")
+        return None
+
+
+def _try_include(mod, tag: str):
+    """Include FastAPI router if the module exposes `router`."""
+    try:
+        if mod is None:
+            return
+        r = getattr(mod, "router", None)
+        if r:
+            app.include_router(r, tags=[tag])
+        else:
+            print(f"[BOOT] Module has no `router`: {mod}")
+    except Exception as e:
+        print(f"[BOOT] Skipping router {tag}: {e}")
+
+
+
+albums = _import_optional("app.routers.albums")
+photos = _import_optional("app.routers.photos")
+users = _import_optional("app.routers.users")
+account = _import_optional("app.routers.account")
+stats = _import_optional("app.routers.stats")
+auth_email = _import_optional("app.routers.auth_email")
+covers = _import_optional("app.routers.covers")
+util = _import_optional("app.routers.util")
+
+
+_try_include(auth_email, "auth-email")
+_try_include(util, "util")
+_try_include(albums, "albums")
+_try_include(photos, "photos")
+_try_include(users, "users")
+_try_include(account, "auth-extra")  # guarded, fixes Render error
+_try_include(stats, "stats")
+_try_include(covers, "covers")
 
 
 @app.post("/register")
 @app.post("/register/")
 def register(body: RegisterIn):
     return register_user(body)
+
 
 @app.post("/login")
 @app.post("/login/")
@@ -137,15 +164,19 @@ def login(body: LoginIn):
 def root():
     return {"name": "Cloud Photo-Share API", "version": VERSION, "backend": AUTH_BACKEND}
 
+
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": time.time()}
+
 
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "timestamp": time.time()}
 
-# Example placeholder feed (safe to keep)
+
+
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}
+
