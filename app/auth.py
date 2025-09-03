@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 # --- Robust PyJWT import (avoid "module 'jwt' has no attribute 'encode'") ---
 try:
@@ -111,6 +111,22 @@ def decode_token(token: str) -> str:
 def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
     return decode_token(creds.credentials)
 
+# ---- Dynamo scan utility with pagination ----
+def _dynamo_scan_all(table, **kwargs) -> List[Dict[str, Any]]:
+    """Scan a Dynamo table with optional args (FilterExpression, etc.), handling pagination."""
+    items: List[Dict[str, Any]] = []
+    last_key = None
+    while True:
+        params = {k: v for k, v in kwargs.items() if v is not None}
+        if last_key:
+            params["ExclusiveStartKey"] = last_key
+        resp = table.scan(**params)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return items
+
 def _put_user(item: Dict[str, Any]) -> None:
     """Store a user in the active backend."""
     if AUTH_BACKEND == "memory" or not table_users:
@@ -120,7 +136,7 @@ def _put_user(item: Dict[str, Any]) -> None:
         table_users.put_item(Item=item)  # type: ignore[union-attr]
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
-        raise HTTPException(status_code=400, detail=f"dynamo error (put user): {msg}")
+        raise HTTPException(status_code=400, detail=f"dynamo Users.put_item failed: {msg}")
 
 def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     if AUTH_BACKEND == "memory" or not table_users:
@@ -130,24 +146,30 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         return resp.get("Item")
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
-        raise HTTPException(status_code=400, detail=f"dynamo error (get user): {msg}")
+        raise HTTPException(status_code=400, detail=f"dynamo Users.get_item failed: {msg}")
 
-def _scan_users_by_email(email: str) -> list[Dict[str, Any]]:
+def _scan_users_by_email(email: str) -> List[Dict[str, Any]]:
     """Scan Users by email; works even if Attr import is unavailable."""
     if AUTH_BACKEND == "memory" or not table_users:
         return [u for u in _mem_users.values() if u.get("email") == email]
     try:
         if Attr is not None:
+            # Server-side filter
             resp = table_users.scan(FilterExpression=Attr("email").eq(email))  # type: ignore[union-attr]
             items = resp.get("Items", [])
-        else:
-            # Fallback: full scan then filter client-side
-            resp = table_users.scan()  # type: ignore[union-attr]
-            items = [it for it in resp.get("Items", []) if it.get("email") == email]
-        return items
+            # In case of pagination with filter, collect all pages
+            lek = resp.get("LastEvaluatedKey")
+            while lek:
+                resp = table_users.scan(FilterExpression=Attr("email").eq(email), ExclusiveStartKey=lek)  # type: ignore[union-attr]
+                items.extend(resp.get("Items", []))
+                lek = resp.get("LastEvaluatedKey")
+            return items
+        # Fallback: full scan then filter client-side
+        items = _dynamo_scan_all(table_users)  # type: ignore[arg-type]
+        return [it for it in items if it.get("email") == email]
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
-        raise HTTPException(status_code=400, detail=f"dynamo error (scan email): {msg}")
+        raise HTTPException(status_code=400, detail=f"dynamo Users.scan failed: {msg}")
 
 def _email_exists(email: str) -> bool:
     return bool(_scan_users_by_email(email))
@@ -169,7 +191,7 @@ def _new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str
         return tok
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
-        raise HTTPException(status_code=400, detail=f"dynamo error (put token): {msg}")
+        raise HTTPException(status_code=400, detail=f"dynamo Tokens.put_item failed: {msg}")
 
 def _consume_token(token: str, kind: str) -> str:
     if AUTH_BACKEND == "memory" or not table_tokens:
@@ -187,7 +209,7 @@ def _consume_token(token: str, kind: str) -> str:
         return str(item["user_id"])
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
-        raise HTTPException(status_code=400, detail=f"dynamo error (consume token): {msg}")
+        raise HTTPException(status_code=400, detail=f"dynamo Tokens.get/delete failed: {msg}")
 
 # -------------------- Handlers --------------------
 
