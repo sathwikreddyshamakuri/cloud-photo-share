@@ -33,7 +33,7 @@ except Exception:
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-VERSION = "0.7.5"
+VERSION = "0.7.6"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 
 # Normalize PUBLIC_UI_URL (strip spaces and trailing slash)
@@ -69,8 +69,7 @@ def _is_allowed_origin(origin: str | None) -> bool:
         return False
     return (origin in ALLOWED_ORIGINS) or bool(re.match(VERCEL_REGEX, origin))
 
-# Safety net: always attach CORS headers even on unhandled errors (so browser
-# doesn’t hide the real problem behind a CORS failure).
+# Safety net: always attach CORS headers even on unhandled errors
 @app.middleware("http")
 async def _ensure_cors_on_all(request: Request, call_next):
     try:
@@ -134,35 +133,31 @@ _try_include(account, "auth-extra")  # guarded include
 _try_include(stats, "stats")
 _try_include(covers, "covers")
 
-# ---- Guarded auth endpoints: never crash; return explicit HTTP errors ----
+# ---- Auth endpoints: return what auth.py returns; just rewrap exceptions for clarity ----
 log = logging.getLogger("uvicorn.error")
 
 @app.post("/register")
 @app.post("/register/")
 def register(body: RegisterIn):
     try:
-        out = register_user(body)
+        return register_user(body)
+    except HTTPException as he:
+        # preserve status code & detail provided by auth.py
+        raise he
     except Exception as e:
         log.exception("register failed")
-        raise HTTPException(status_code=400, detail=f"register failed: {e!s}")
-    if isinstance(out, dict) and out.get("ok"):
-        return out
-    msg = out.get("msg") if isinstance(out, dict) else "register failed"
-    raise HTTPException(status_code=400, detail=msg)
+        raise HTTPException(status_code=400, detail=f"register failed: {type(e).__name__}: {e}")
 
 @app.post("/login")
 @app.post("/login/")
 def login(body: LoginIn):
     try:
-        out = login_user(body)
+        return login_user(body)
+    except HTTPException as he:
+        raise he
     except Exception as e:
         log.exception("login failed")
-        # 401 for auth failures; change to 500 if you want to distinguish infra faults
-        raise HTTPException(status_code=401, detail=f"login failed: {e!s}")
-    if isinstance(out, dict) and out.get("ok"):
-        return out
-    msg = out.get("msg") if isinstance(out, dict) else "invalid credentials"
-    raise HTTPException(status_code=401, detail=msg)
+        raise HTTPException(status_code=400, detail=f"login failed: {type(e).__name__}: {e}")
 
 @app.get("/")
 def root():
