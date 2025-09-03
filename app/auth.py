@@ -6,11 +6,28 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
-import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
+
+# ---- choose a working JWT backend (PyJWT preferred; fall back to python-jose) ----
+# _JWT: module with encode/decode; JWTError, ExpiredSig: exception classes
+try:
+    import jwt as _jwt  # expect PyJWT
+    if not hasattr(_jwt, "encode") or not hasattr(_jwt, "decode"):
+        raise ImportError("not PyJWT")
+    from jwt import InvalidTokenError as JWTError, ExpiredSignatureError as ExpiredSig
+    JWT_BACKEND = "pyjwt"
+except Exception:
+    try:
+        from jose import jwt as _jwt  # python-jose
+        from jose.exceptions import JWTError, ExpiredSignatureError as ExpiredSig
+        JWT_BACKEND = "python-jose"
+    except Exception as e:
+        raise RuntimeError(
+            "No usable JWT library found. Install PyJWT or python-jose."
+        ) from e
 
 # boto3 conditions used in Dynamo scan paths (guarded)
 try:
@@ -28,7 +45,6 @@ from .emailer import send_email
 
 
 # Config
-
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 AUTO_VERIFY = os.getenv("AUTO_VERIFY_USERS", "0") == "1"
 
@@ -57,9 +73,7 @@ except NameError:
     _mem_tokens: Dict[str, Dict[str, Any]] = {}
 
 
-
 # Models
-
 class RegisterIn(BaseModel):
     email: EmailStr
     password: str
@@ -88,9 +102,7 @@ class ChangePwdIn(BaseModel):
     new_password: str
 
 
-
 # Helpers (hashing, JWT)
-
 def hash_pw(p: str) -> str:
     return pwd_ctx.hash(p)
 
@@ -100,15 +112,21 @@ def verify_pw(p: str, h: str) -> bool:
 
 
 def create_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": time.time() + TOKEN_TTL, "scope": "access"}
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    now = int(time.time())
+    payload = {"sub": user_id, "iat": now, "exp": now + TOKEN_TTL, "scope": "access"}
+    token = _jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    # PyJWT returns str; python-jose returns str too; just ensure string
+    return str(token)
 
 
 def decode_token(token: str) -> str:
     try:
-        data = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return str(data["sub"])
-    except jwt.PyJWTError:
+        data = _jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        sub = data.get("sub")
+        if not sub:
+            raise JWTError("missing sub")
+        return str(sub)
+    except (JWTError, ExpiredSig):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
@@ -183,8 +201,7 @@ def _consume_token(token: str, kind: str) -> str:
     return str(item["user_id"])
 
 
-# Handlers (register/login/reset/verify)
-
+# Handlers (register/login/reset/verify) – unchanged business logic
 def register_user(body: RegisterIn):
     if _email_exists(body.email):
         raise HTTPException(status_code=400, detail="email already registered")
@@ -197,13 +214,11 @@ def register_user(body: RegisterIn):
         "email_verified": AUTO_VERIFY,
     }
     _put_user(item)
-
     email_sent = False
     if not AUTO_VERIFY and PUBLIC_UI_URL:
         token = _new_one_time_token(user_id, "verify", 24 * 3600)
         verify_link = f"{PUBLIC_UI_URL}/verify?token={token}"
         try:
-            # Keep it minimal to match emailer signature
             send_email(
                 to=body.email,
                 subject="Verify your email",
