@@ -4,10 +4,11 @@ from __future__ import annotations
 import os
 import re
 import time
+import logging
 from importlib import import_module
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,7 +33,7 @@ except Exception:
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-VERSION = "0.7.4"
+VERSION = "0.7.5"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 
 # Normalize PUBLIC_UI_URL (strip spaces and trailing slash)
@@ -68,8 +69,8 @@ def _is_allowed_origin(origin: str | None) -> bool:
         return False
     return (origin in ALLOWED_ORIGINS) or bool(re.match(VERCEL_REGEX, origin))
 
-# Safety net: always attach CORS headers even on unhandled errors (so browser doesn’t
-# hide the real problem behind a CORS failure).
+# Safety net: always attach CORS headers even on unhandled errors (so browser
+# doesn’t hide the real problem behind a CORS failure).
 @app.middleware("http")
 async def _ensure_cors_on_all(request: Request, call_next):
     try:
@@ -82,7 +83,6 @@ async def _ensure_cors_on_all(request: Request, call_next):
 
     origin = request.headers.get("origin")
     if origin and _is_allowed_origin(origin):
-        # It's fine to overwrite; CORSMiddleware may have already set these.
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Vary"] = "Origin"
@@ -134,15 +134,35 @@ _try_include(account, "auth-extra")  # guarded include
 _try_include(stats, "stats")
 _try_include(covers, "covers")
 
+# ---- Guarded auth endpoints: never crash; return explicit HTTP errors ----
+log = logging.getLogger("uvicorn.error")
+
 @app.post("/register")
 @app.post("/register/")
 def register(body: RegisterIn):
-    return register_user(body)
+    try:
+        out = register_user(body)
+    except Exception as e:
+        log.exception("register failed")
+        raise HTTPException(status_code=400, detail=f"register failed: {e!s}")
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    msg = out.get("msg") if isinstance(out, dict) else "register failed"
+    raise HTTPException(status_code=400, detail=msg)
 
 @app.post("/login")
 @app.post("/login/")
 def login(body: LoginIn):
-    return login_user(body)
+    try:
+        out = login_user(body)
+    except Exception as e:
+        log.exception("login failed")
+        # 401 for auth failures; change to 500 if you want to distinguish infra faults
+        raise HTTPException(status_code=401, detail=f"login failed: {e!s}")
+    if isinstance(out, dict) and out.get("ok"):
+        return out
+    msg = out.get("msg") if isinstance(out, dict) else "invalid credentials"
+    raise HTTPException(status_code=401, detail=msg)
 
 @app.get("/")
 def root():
