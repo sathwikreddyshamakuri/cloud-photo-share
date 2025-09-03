@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from importlib import import_module
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-
 
 try:
     from app.auth import LoginIn, RegisterIn, login_user, register_user  # type: ignore
@@ -30,7 +31,6 @@ except Exception:
 
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
-
 
 VERSION = "0.7.4"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
@@ -63,14 +63,38 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],  # for downloads
 )
 
+def _is_allowed_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    return (origin in ALLOWED_ORIGINS) or bool(re.match(VERCEL_REGEX, origin))
 
+# Safety net: always attach CORS headers even on unhandled errors (so browser doesn’t
+# hide the real problem behind a CORS failure).
+@app.middleware("http")
+async def _ensure_cors_on_all(request: Request, call_next):
+    try:
+        response = await call_next(request)
+    except Exception as e:
+        import traceback
+        print("[ERROR] Unhandled exception in request:", repr(e))
+        traceback.print_exc()
+        response = PlainTextResponse("Internal Server Error", status_code=500)
+
+    origin = request.headers.get("origin")
+    if origin and _is_allowed_origin(origin):
+        # It's fine to overwrite; CORSMiddleware may have already set these.
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
+
+# --- static mounting when running in memory mode ---
 if AUTH_BACKEND == "memory":
     LOCAL_UPLOAD_ROOT = Path(os.getenv("LOCAL_UPLOAD_ROOT", "local_uploads"))
     (LOCAL_UPLOAD_ROOT / "avatars").mkdir(parents=True, exist_ok=True)
     app.state.local_upload_root = LOCAL_UPLOAD_ROOT
     app.mount("/static", StaticFiles(directory=str(LOCAL_UPLOAD_ROOT)), name="static")
 
-# --- Dynamic router loader (don’t crash boot if a router has issues) ---
 def _import_optional(modpath: str):
     """Import a module if available; return None on failure (don’t crash boot)."""
     try:
@@ -110,7 +134,6 @@ _try_include(account, "auth-extra")  # guarded include
 _try_include(stats, "stats")
 _try_include(covers, "covers")
 
-
 @app.post("/register")
 @app.post("/register/")
 def register(body: RegisterIn):
@@ -120,7 +143,6 @@ def register(body: RegisterIn):
 @app.post("/login/")
 def login(body: LoginIn):
     return login_user(body)
-
 
 @app.get("/")
 def root():
@@ -134,11 +156,9 @@ def health():
 def healthz():
     return {"status": "ok", "timestamp": time.time()}
 
-
 @app.get("/feed")
 def get_feed(limit: int = 20):
     return {"photos": []}
-
 
 print("[BOOT] VERSION:", VERSION)
 print("[BOOT] AUTH_BACKEND:", AUTH_BACKEND)
