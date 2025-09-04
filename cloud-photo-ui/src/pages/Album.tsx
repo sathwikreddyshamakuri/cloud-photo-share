@@ -6,6 +6,7 @@ import {
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../lib/api';
+import { putToS3 } from '../lib/s3';
 
 interface PhotoMeta {
   photo_id: string;
@@ -49,54 +50,92 @@ export default function AlbumPage() {
   const next = () => setIdx(i => (i === photos.length - 1 ? 0 : i + 1));
 
   const fetchPhotos = useCallback(async () => {
+    if (!albumId) return;
     setLoading(true);
     try {
       const { data } = await api.get<{items: PhotoMeta[]}>('/photos/', {
         params: { album_id: albumId, limit: 500 }
       });
       setPhotos(data.items);
+      setError(null);
     } catch (e:any) {
       if (e.response?.status === 401) {
         localStorage.removeItem('token');
         window.dispatchEvent(new Event('token-change'));
         nav('/login', { replace: true });
-      } else setError('Failed to load photos');
+      } else {
+        setError(e?.response?.data?.detail || 'Failed to load photos');
+      }
     } finally { setLoading(false); }
   }, [albumId, nav]);
 
   /* load once */
   useEffect(() => {
-    fetchPhotos();   // no localStorage token check here (router guards already)
+    fetchPhotos();
   }, [fetchPhotos]);
 
-  /* upload  */
-  const onSelect = (e:ChangeEvent<HTMLInputElement>) => setFile(e.target.files?.[0] ?? null);
+  /* upload via presigned PUT */
+  const onSelect = (e:ChangeEvent<HTMLInputElement>) =>
+    setFile(e.target.files?.[0] ?? null);
 
   async function onUpload(e:FormEvent) {
-    e.preventDefault(); if (!file) return;
-    const fd = new FormData(); fd.append('file', file);
-    setUploading(true); setProg(0);
+    e.preventDefault();
+    if (!file || !albumId) return;
+
+    // Always take the exact MIME you'll send to S3
+    const mime = file.type || 'application/octet-stream';
+
+    setUploading(true);
+    setProg(0);
+
     try {
-      await api.post('/photos/', fd, {
-        params:{album_id:albumId},
-        headers:{'Content-Type':'multipart/form-data'},
-        onUploadProgress: ev => setProg(Math.round((ev.loaded/(ev.total??1))*100))
+      // 1) Ask API for a presigned PUT URL
+      const { data } = await api.post('/photos/', {
+        album_id: albumId,
+        filename: file.name,
+        mime
       });
-      setFile(null); fetchPhotos(); toast.success('Uploaded');
-    } catch { toast.error('Upload failed'); } finally { setUploading(false); }
+
+      const putUrl: string | undefined = data?.put_url;
+      const photoId: string | undefined = data?.photo_id;
+      const finalizeRequired: boolean | undefined = data?.finalize_required;
+
+      if (!putUrl) {
+        throw new Error('Server did not return a presigned URL');
+      }
+
+      // 2) Upload bytes directly to S3 (no cookies)
+      await putToS3(putUrl, file, mime, ev => {
+        if (ev?.total) setProg(Math.round((ev.loaded / ev.total) * 100));
+      });
+
+      // 3) (optional) finalize if your API requires it
+      if (finalizeRequired && photoId) {
+        try { await api.post(`/photos/${photoId}/finalize`); } catch { /* ignore */ }
+      }
+
+      setFile(null);
+      await fetchPhotos();
+      toast.success('Uploaded');
+    } catch (err:any) {
+      const msg = err?.response?.data?.detail || err?.message || 'Upload failed';
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
   }
 
   /*  delete one / many  */
   async function deleteOne(id:string) {
     if (!confirm('Delete this photo?')) return;
-    await api.delete(`/photos/${id}`);
+    await api.delete(`/photos/${id}/`); // keep trailing slash for consistency
     setPhotos(p=>p.filter(x=>x.photo_id!==id));
   }
 
   async function deleteSelected() {
     if (!selected.size) return;
     if (!confirm(`Delete ${selected.size} selected photo(s)?`)) return;
-    await Promise.all([...selected].map(id => api.delete(`/photos/${id}`).catch(()=>{})));
+    await Promise.all([...selected].map(id => api.delete(`/photos/${id}/`).catch(()=>{})));
     setPhotos(p=>p.filter(x=>!selected.has(x.photo_id)));
     setSelected(new Set()); setSelecting(false);
     toast.success('Deleted');
