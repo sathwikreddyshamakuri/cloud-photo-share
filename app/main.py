@@ -1,4 +1,5 @@
-﻿from __future__ import annotations
+﻿# app/main.py
+from __future__ import annotations
 
 import os
 import re
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
@@ -33,7 +34,7 @@ except Exception:
     def login_user(_: "LoginIn"):
         return {"ok": False, "msg": "auth not wired"}
 
-VERSION = "0.7.6"
+VERSION = "0.7.7"
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 
 # Normalize PUBLIC_UI_URL (strip spaces and trailing slash)
@@ -57,10 +58,10 @@ VERCEL_REGEX = r"^https://.*\.vercel\.app$"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(ALLOWED_ORIGINS),
-    allow_origin_regex=VERCEL_REGEX,  # regex + explicit list
-    allow_credentials=True,           # needed for cookies
-    allow_methods=["*"],              # let middleware handle OPTIONS & others
-    allow_headers=["*"],              # reflect requested headers automatically
+    allow_origin_regex=VERCEL_REGEX,   # regex + explicit list
+    allow_credentials=True,            # needed for cookies
+    allow_methods=["*"],               # let middleware handle OPTIONS & others
+    allow_headers=["*"],               # reflect requested headers automatically
     expose_headers=["Content-Disposition"],  # for downloads
 )
 
@@ -86,6 +87,25 @@ async def _ensure_cors_on_all(request: Request, call_next):
         response.headers["Access-Control-Allow-Credentials"] = "true"
         response.headers["Vary"] = "Origin"
     return response
+
+# ---- Make Dynamo/SDK errors visible (JSON) instead of opaque 500s, with CORS headers ----
+try:
+    from botocore.exceptions import ClientError  # type: ignore
+
+    @app.exception_handler(ClientError)
+    async def handle_client_error(request: Request, exc: "ClientError"):
+        msg = getattr(exc, "response", {}).get("Error", {}).get("Message", str(exc))
+        status = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode", 400)
+        headers: dict[str, str] = {}
+        origin = request.headers.get("origin")
+        if origin and _is_allowed_origin(origin):
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+            headers["Vary"] = "Origin"
+        return JSONResponse({"detail": f"dynamo error: {msg}"}, status_code=status or 400, headers=headers)
+except Exception:
+    # If botocore isn't present (e.g., memory backend), do nothing.
+    pass
 
 # --- static mounting when running in memory mode ---
 if AUTH_BACKEND == "memory":
