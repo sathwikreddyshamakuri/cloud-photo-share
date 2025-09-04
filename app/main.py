@@ -1,5 +1,4 @@
-﻿# app/main.py
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import os
 import re
@@ -8,15 +7,16 @@ import logging
 from importlib import import_module
 from pathlib import Path
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 try:
-    from app.auth import LoginIn, RegisterIn, login_user, register_user  # type: ignore
+    from app.auth import LoginIn, RegisterIn, login_user, register_user, TOKEN_TTL  # type: ignore
 except Exception:
     from pydantic import BaseModel
+    TOKEN_TTL = 3600
 
     class RegisterIn(BaseModel):
         email: str
@@ -133,7 +133,7 @@ _try_include(account, "auth-extra")  # guarded include
 _try_include(stats, "stats")
 _try_include(covers, "covers")
 
-# ---- Auth endpoints: return what auth.py returns; just rewrap exceptions for clarity ----
+# ---- Auth endpoints: return auth outputs, and set cookie on /login ----
 log = logging.getLogger("uvicorn.error")
 
 @app.post("/register")
@@ -142,7 +142,6 @@ def register(body: RegisterIn):
     try:
         return register_user(body)
     except HTTPException as he:
-        # preserve status code & detail provided by auth.py
         raise he
     except Exception as e:
         log.exception("register failed")
@@ -150,14 +149,30 @@ def register(body: RegisterIn):
 
 @app.post("/login")
 @app.post("/login/")
-def login(body: LoginIn):
+def login(body: LoginIn, response: Response):
     try:
-        return login_user(body)
+        out = login_user(body)  # {"access_token": "..."}
     except HTTPException as he:
         raise he
     except Exception as e:
         log.exception("login failed")
         raise HTTPException(status_code=400, detail=f"login failed: {type(e).__name__}: {e}")
+
+    token = (out or {}).get("access_token")
+    if not token:
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+    # Set cookie so browser calls (axios/fetch) send it automatically.
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        path="/",
+        max_age=int(TOKEN_TTL),
+        httponly=True,
+        secure=True,       # required with SameSite=None
+        samesite="none",
+    )
+    return out
 
 @app.get("/")
 def root():
