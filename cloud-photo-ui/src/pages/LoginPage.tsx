@@ -3,7 +3,7 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate }      from 'react-router-dom';
 import toast                                   from 'react-hot-toast';
 import logo                                    from '../assets/nuagevault-logo.png';
-import api                                     from '../lib/api';
+import api, { setAuthToken }                   from '../lib/api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -42,13 +42,10 @@ export default function LoginPage() {
       );
 
       const token = res.data?.access_token;
-      if (token) {
-        localStorage.setItem('token', token);
-      } else {
-        // cookie-only path; ensure we don't keep stale tokens
-        localStorage.removeItem('token');
-      }
-      window.dispatchEvent(new Event('token-change'));
+
+      // >>> KEY: persist token & set Authorization header for all future requests
+      if (token) setAuthToken(token);
+      else setAuthToken(undefined); // cookie-only path — clear any stale header
 
       toast.success('Logged in');
       navigate('/albums', { replace: true });
