@@ -1,3 +1,4 @@
+# app/auth.py
 from __future__ import annotations
 
 import os
@@ -5,14 +6,22 @@ import time
 import uuid
 from typing import Any, Dict, Optional, List
 
-# --- Robust PyJWT import (avoid "module 'jwt' has no attribute 'encode'") ---
+# --- Robust PyJWT import (support both old/new layouts) ---
 try:
-    from jwt import encode as jwt_encode, decode as jwt_decode, PyJWTError  # PyJWT
+    from jwt import encode as jwt_encode, decode as jwt_decode  # type: ignore
+    try:
+        # PyJWT >=2
+        from jwt.exceptions import PyJWTError  # type: ignore
+    except Exception:  # PyJWT <2 exposed at top-level
+        from jwt import PyJWTError  # type: ignore
 except Exception:  # pragma: no cover
-    import jwt as _jwt  # fallback, but expect PyJWT to be installed
+    import jwt as _jwt  # fallback
     jwt_encode = _jwt.encode
     jwt_decode = _jwt.decode
-    PyJWTError = Exception
+    try:
+        from jwt.exceptions import PyJWTError  # type: ignore
+    except Exception:
+        PyJWTError = Exception  # type: ignore
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -49,7 +58,7 @@ PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL", "")
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Make bearer optional so we can fall back to cookie.
+# Bearer optional, so we can fall back to cookie
 security = HTTPBearer(auto_error=False)
 
 table_users = dyna.Table("Users") if dyna else None  # type: ignore
@@ -65,6 +74,7 @@ try:
     _mem_tokens  # type: ignore[name-defined]
 except NameError:
     _mem_tokens: Dict[str, Dict[str, Any]] = {}
+
 
 # -------------------- Models --------------------
 
@@ -90,6 +100,7 @@ class ChangePwdIn(BaseModel):
     current_password: str
     new_password: str
 
+
 # -------------------- Helpers --------------------
 
 def hash_pw(p: str) -> str:
@@ -99,7 +110,8 @@ def verify_pw(p: str, h: str) -> bool:
     return pwd_ctx.verify(p, h)
 
 def create_token(user_id: str) -> str:
-    payload = {"sub": user_id, "exp": time.time() + TOKEN_TTL, "scope": "access"}
+    # Use int for exp to avoid float issues
+    payload = {"sub": user_id, "exp": int(time.time()) + TOKEN_TTL, "scope": "access"}
     return jwt_encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 def decode_token(token: str) -> str:
@@ -109,19 +121,27 @@ def decode_token(token: str) -> str:
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+def _extract_token(request: Request, creds: Optional[HTTPAuthorizationCredentials]) -> Optional[str]:
+    # 1) Prefer Authorization: Bearer <jwt>
+    if creds and getattr(creds, "scheme", "").lower() == "bearer" and getattr(creds, "credentials", None):
+        return creds.credentials
+    # 2) Fallback to HttpOnly cookie set by /login
+    cookie = request.cookies.get("access_token")
+    if cookie:
+        return cookie
+    return None
+
 # Accept Bearer OR cookie named "access_token"
 def current_user(
     request: Request,
     creds: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> str:
-    token = None
-    if creds and getattr(creds, "credentials", None):
-        token = creds.credentials
-    else:
-        token = request.cookies.get("access_token")
+    token = _extract_token(request, creds)
     if not token:
-        raise HTTPException(status_code=403, detail="Not authenticated")
+        # 401 so the UI redirects to /login
+        raise HTTPException(status_code=401, detail="Not authenticated")
     return decode_token(token)
+
 
 # ---- Dynamo scan utility with pagination ----
 def _dynamo_scan_all(table, **kwargs) -> List[Dict[str, Any]]:
@@ -167,7 +187,10 @@ def _scan_users_by_email(email: str) -> List[Dict[str, Any]]:
             items = resp.get("Items", [])
             lek = resp.get("LastEvaluatedKey")
             while lek:
-                resp = table_users.scan(FilterExpression=Attr("email").eq(email), ExclusiveStartKey=lek)  # type: ignore[union-attr]
+                resp = table_users.scan(
+                    FilterExpression=Attr("email").eq(email),
+                    ExclusiveStartKey=lek,  # type: ignore[arg-type]
+                )  # type: ignore[union-attr]
                 items.extend(resp.get("Items", []))
                 lek = resp.get("LastEvaluatedKey")
             return items
@@ -216,6 +239,7 @@ def _consume_token(token: str, kind: str) -> str:
     except ClientError as e:  # pragma: no cover
         msg = getattr(e, "response", {}).get("Error", {}).get("Message", str(e))
         raise HTTPException(status_code=400, detail=f"dynamo Tokens.get/delete failed: {msg}")
+
 
 # -------------------- Handlers --------------------
 
