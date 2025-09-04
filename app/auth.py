@@ -45,7 +45,13 @@ try:
 except Exception:  # pragma: no cover
     dyna = None  # type: ignore
 
-from .emailer import send_email
+# ✨ Use the same helpers/templates as your auth_email router
+try:
+    from .tokens import new_token, expiry_ts  # minutes→unix ts
+except Exception as e:  # pragma: no cover
+    raise RuntimeError(f"Missing app.tokens helpers: {e}")
+
+from .emailer import send_email, verification_email_html
 
 AUTH_BACKEND = os.getenv("AUTH_BACKEND", "dynamo").lower().strip()
 AUTO_VERIFY = os.getenv("AUTO_VERIFY_USERS", "0") == "1"
@@ -62,7 +68,7 @@ pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer(auto_error=False)
 
 table_users = dyna.Table("Users") if dyna else None  # type: ignore
-table_tokens = dyna.Table("Tokens") if dyna else None  # type: ignore
+table_tokens = dyna.Table("Tokens") if dyna else None  # type: ignore  # (unused for email verify now)
 
 # In-memory stores for dev (AUTH_BACKEND=memory)
 try:
@@ -75,8 +81,6 @@ try:
 except NameError:
     _mem_tokens: Dict[str, Dict[str, Any]] = {}
 
-
-# -------------------- Models --------------------
 
 class RegisterIn(BaseModel):
     email: EmailStr
@@ -101,7 +105,6 @@ class ChangePwdIn(BaseModel):
     new_password: str
 
 
-# -------------------- Helpers --------------------
 
 def hash_pw(p: str) -> str:
     return pwd_ctx.hash(p)
@@ -208,6 +211,7 @@ def _get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     return items[0] if items else None
 
 def _new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str:
+    # kept for other features (e.g., password reset); not used for email verify anymore
     tok = str(uuid.uuid4())
     expires = int(time.time()) + ttl_seconds
     if AUTH_BACKEND == "memory" or not table_tokens:
@@ -223,6 +227,7 @@ def _new_one_time_token(user_id: str, kind: str, ttl_seconds: int = 3600) -> str
         raise HTTPException(status_code=400, detail=f"dynamo Tokens.put_item failed: {msg}")
 
 def _consume_token(token: str, kind: str) -> str:
+    # kept for other features (e.g., password reset)
     if AUTH_BACKEND == "memory" or not table_tokens:
         item = _mem_tokens.get(token)
         if not item or item.get("type") != kind or item.get("expires_at", 0) < time.time():
@@ -259,13 +264,29 @@ def register_user(body: RegisterIn):
 
         email_sent = False
         if not AUTO_VERIFY and PUBLIC_UI_URL:
-            token = _new_one_time_token(user_id, "verify", 24 * 3600)
-            verify_link = f"{PUBLIC_UI_URL}/verify?token={token}"
+            # ✅ Use the same scheme as /auth/verify: store hash+expiry on the user item
+            raw, tok_hash = new_token()
+            exp = expiry_ts(60 * 24)  # minutes (24h)
+
+            if AUTH_BACKEND == "memory" or not table_users:
+                # update in-memory user
+                u = _mem_users[user_id]
+                u["email_verify_token_hash"] = tok_hash
+                u["email_verify_expires_at"] = exp
+            else:
+                # update DynamoDB user
+                table_users.update_item(  # type: ignore[union-attr]
+                    Key={"user_id": user_id},
+                    UpdateExpression="SET email_verify_token_hash = :h, email_verify_expires_at = :e",
+                    ExpressionAttributeValues={":h": tok_hash, ":e": exp},
+                )
+
+            verify_link = f"{PUBLIC_UI_URL}/verify?token={raw}&email={body.email}"
             try:
                 send_email(
                     to=body.email,
                     subject="Verify your email",
-                    html=f"<p>Click to verify: <a href='{verify_link}'>{verify_link}</a></p>",
+                    html=verification_email_html(verify_link),
                 )
                 email_sent = True
             except Exception as e:  # pragma: no cover
