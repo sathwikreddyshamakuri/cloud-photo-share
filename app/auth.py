@@ -1,4 +1,3 @@
-# app/auth.py
 from __future__ import annotations
 
 import os
@@ -15,7 +14,7 @@ except Exception:  # pragma: no cover
     jwt_decode = _jwt.decode
     PyJWTError = Exception
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
@@ -49,7 +48,9 @@ TOKEN_TTL = 60 * 60  # 1 hour
 PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL", "")
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+
+# Make bearer optional so we can fall back to cookie.
+security = HTTPBearer(auto_error=False)
 
 table_users = dyna.Table("Users") if dyna else None  # type: ignore
 table_tokens = dyna.Table("Tokens") if dyna else None  # type: ignore
@@ -108,12 +109,22 @@ def decode_token(token: str) -> str:
     except PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
-def current_user(creds: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    return decode_token(creds.credentials)
+# Accept Bearer OR cookie named "access_token"
+def current_user(
+    request: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(security),
+) -> str:
+    token = None
+    if creds and getattr(creds, "credentials", None):
+        token = creds.credentials
+    else:
+        token = request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(status_code=403, detail="Not authenticated")
+    return decode_token(token)
 
 # ---- Dynamo scan utility with pagination ----
 def _dynamo_scan_all(table, **kwargs) -> List[Dict[str, Any]]:
-    """Scan a Dynamo table with optional args (FilterExpression, etc.), handling pagination."""
     items: List[Dict[str, Any]] = []
     last_key = None
     while True:
@@ -128,7 +139,6 @@ def _dynamo_scan_all(table, **kwargs) -> List[Dict[str, Any]]:
     return items
 
 def _put_user(item: Dict[str, Any]) -> None:
-    """Store a user in the active backend."""
     if AUTH_BACKEND == "memory" or not table_users:
         _mem_users[item["user_id"]] = item
         return
@@ -149,22 +159,18 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         raise HTTPException(status_code=400, detail=f"dynamo Users.get_item failed: {msg}")
 
 def _scan_users_by_email(email: str) -> List[Dict[str, Any]]:
-    """Scan Users by email; works even if Attr import is unavailable."""
     if AUTH_BACKEND == "memory" or not table_users:
         return [u for u in _mem_users.values() if u.get("email") == email]
     try:
         if Attr is not None:
-            # Server-side filter
             resp = table_users.scan(FilterExpression=Attr("email").eq(email))  # type: ignore[union-attr]
             items = resp.get("Items", [])
-            # In case of pagination with filter, collect all pages
             lek = resp.get("LastEvaluatedKey")
             while lek:
                 resp = table_users.scan(FilterExpression=Attr("email").eq(email), ExclusiveStartKey=lek)  # type: ignore[union-attr]
                 items.extend(resp.get("Items", []))
                 lek = resp.get("LastEvaluatedKey")
             return items
-        # Fallback: full scan then filter client-side
         items = _dynamo_scan_all(table_users)  # type: ignore[arg-type]
         return [it for it in items if it.get("email") == email]
     except ClientError as e:  # pragma: no cover
