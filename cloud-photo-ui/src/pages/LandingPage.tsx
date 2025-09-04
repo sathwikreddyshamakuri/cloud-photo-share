@@ -2,14 +2,14 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
-import logo from '../assets/nuagevault-logo.png';   // ✔ bundled path
+import logo from '../assets/nuagevault-logo.png';   
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { state } = useLocation();
   const flashMsg: string | undefined = (state as any)?.msg;
 
-  // ── redirect authenticated users straight to /albums ──
+
   if (localStorage.getItem('token')) {
     navigate('/albums', { replace: true });
   }
