@@ -34,6 +34,12 @@ class VerifyRequest(BaseModel):
 
 class ForgotRequest(BaseModel):
     email: EmailStr
+    
+@router.post("/forgot")
+def forgot_password_alias(req: ForgotRequest):
+    # Backwards-compat for old clients hitting /auth/forgot
+    return forgot_password(req)
+
 
 class ResetRequest(BaseModel):
     email: EmailStr
