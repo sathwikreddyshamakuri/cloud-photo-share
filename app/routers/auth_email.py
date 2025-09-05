@@ -16,7 +16,7 @@ USERS_TABLE = os.getenv("DYNAMO_USERS", "Users")
 
 # Frontend (SPA) base URL, e.g., https://nuagevault.app
 PUBLIC_UI_URL = os.getenv("PUBLIC_UI_URL", "http://localhost:5173")
-# Public API base URL (only used if you switch emails to server-first verify links)
+# Public API base URL (used if you switch emails to server-first verify links)
 PUBLIC_API_URL = os.getenv("PUBLIC_API_URL", os.getenv("BACKEND_URL", "http://localhost:8000"))
 
 TOKEN_EXPIRE_MINUTES = int(os.getenv("TOKEN_EXPIRE_MINUTES", "60"))
@@ -34,12 +34,6 @@ class VerifyRequest(BaseModel):
 
 class ForgotRequest(BaseModel):
     email: EmailStr
-    
-@router.post("/forgot")
-def forgot_password_alias(req: ForgotRequest):
-    # Backwards-compat for old clients hitting /auth/forgot
-    return forgot_password(req)
-
 
 class ResetRequest(BaseModel):
     email: EmailStr
@@ -59,8 +53,8 @@ except Exception:
 
 def get_user_by_email(email: str) -> dict | None:
     """
-    Prefer the GSI 'email-index' (PK=email, String, lowercased). While the GSI
-    is missing/CREATING, fall back to a table scan (fine for small tables).
+    Prefer the GSI 'email-index' (PK=email, String; store emails lowercased).
+    While the GSI is missing/CREATING, fall back to a table scan.
     """
     e = (email or "").lower()
 
@@ -81,7 +75,7 @@ def get_user_by_email(email: str) -> dict | None:
         # Any transient issue → fall through to scan
         pass
 
-    # Fallback: scan (keeps you unblocked while the GSI backfills)
+    # Fallback: scan (fine for small tables; remove later if desired)
     try:
         resp = users.scan(
             FilterExpression=Attr("email").eq(e),
@@ -124,13 +118,14 @@ def _verify_token_and_mark(user: dict, raw_token: str):
 
 
 def _send_verification_email(email: str, raw_token: str):
-    # You can keep using the frontend-first link, or switch to server-first:
-    # verify_url = f"{PUBLIC_API_URL}/auth/verify-email?token={raw_token}&email={email}"
+    # Keep frontend-first link (works with your existing /verify page)
     verify_url = f"{PUBLIC_UI_URL}/verify?token={raw_token}&email={email}"
+    # Or switch to server-first:
+    # verify_url = f"{PUBLIC_API_URL}/auth/verify-email?token={raw_token}&email={email}"
     send_email(email, "Verify your email", verification_email_html(verify_url))
 
 
-# ---------- Routes ----------
+
 @router.post("/resend-verification")
 def resend_verification(req: ForgotRequest):
     user = get_user_by_email(req.email)
@@ -148,6 +143,12 @@ def resend_verification(req: ForgotRequest):
     )
     _send_verification_email(req.email, raw)
     return {"ok": True}
+
+
+
+@router.post("/forgot")
+def forgot_password_alias(req: ForgotRequest):  # forward to the real handler
+    return forgot_password(req)
 
 
 
