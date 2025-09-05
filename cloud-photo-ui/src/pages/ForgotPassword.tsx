@@ -13,7 +13,7 @@ export default function ForgotPasswordPage() {
     setMsg(null);
     setErr(null);
     try {
-      await api.post('/auth/forgot', { email });
+      await api.post('/auth/forgot-password', { email });
       setMsg('If that email exists, a reset link was sent.');
     } catch (e: any) {
       setErr(e.response?.data?.detail || 'Something went wrong');
@@ -47,3 +47,4 @@ export default function ForgotPasswordPage() {
     </div>
   );
 }
+
