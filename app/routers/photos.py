@@ -29,6 +29,7 @@ table_photos = dyna.Table("PhotoMeta")
 MAX_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))  # 25MB default
 
 
+# ---------- Models ----------
 class PresignIn(BaseModel):
     # JSON body style for presigned flow
     album_id: Optional[str] = None
@@ -37,93 +38,79 @@ class PresignIn(BaseModel):
     mime: Optional[str] = None
 
 
-def _resolve_album_id(
-    album_id_q: Optional[str],
-    album_id_q_camel: Optional[str],
-    album_id_form: Optional[str],
-    album_id_form_camel: Optional[str],
-    body: Optional[PresignIn],
-) -> Optional[str]:
-    if album_id_form or album_id_form_camel:
-        return album_id_form or album_id_form_camel
-    if album_id_q or album_id_q_camel:
-        return album_id_q or album_id_q_camel
-    if body and (body.album_id or body.albumId):
-        return body.album_id or body.albumId
-    return None
-
-
-@router.post("/photos/", status_code=status.HTTP_201_CREATED)
-async def create_or_upload_photo(
-    # Accept album id via query *or* form (supports album_id and albumId)
-    album_id_q: Optional[str] = Query(None, alias="album_id"),
-    album_id_q_camel: Optional[str] = Query(None, alias="albumId"),
-    album_id_form: Optional[str] = Form(None, alias="album_id"),
-    album_id_form_camel: Optional[str] = Form(None, alias="albumId"),
-
-    # Optional file for direct multipart upload
-    file: Optional[UploadFile] = File(None),
-
-    # Optional JSON body for presigned flow
-    body: Optional[PresignIn] = Body(None),
-
-    user_id: str = Depends(current_user),
-):
-    album_id = _resolve_album_id(
-        album_id_q, album_id_q_camel, album_id_form, album_id_form_camel, body
-    )
-    if not album_id:
-        raise HTTPException(status_code=422, detail="album_id is required")
-
+# ---------- Helpers ----------
+def _assert_album_ownership(album_id: str, user_id: str):
     alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not alb or alb.get("owner") != user_id:
         raise HTTPException(status_code=404, detail="Album not found")
 
-    # ---- Path A: JSON presign flow (no file part provided) ----
-    if file is None and body is not None:
-        filename = body.filename or "upload.bin"
-        mime = body.mime or "application/octet-stream"
-        ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
 
-        photo_id = str(uuid.uuid4())
-        key = f"{album_id}/{photo_id}.{ext}"
+# ---------- Upload: JSON presign flow ----------
+@router.post("/photos/", status_code=status.HTTP_201_CREATED)
+def create_photo_presigned(
+    body: PresignIn = Body(...),
+    user_id: str = Depends(current_user),
+):
+    album_id = body.album_id or body.albumId
+    if not album_id:
+        raise HTTPException(status_code=422, detail="album_id is required")
 
-        # Immediately create metadata so list_photos shows the new item
-        now = int(time.time())
-        table_photos.put_item(
-            Item={
-                "photo_id": photo_id,
-                "album_id": album_id,
-                "s3_key": key,
-                "uploaded_at": now,  # set now; object bytes will arrive via PUT
-            }
-        )
+    _assert_album_ownership(album_id, user_id)
 
-        # Presigned PUT URL for the browser to upload bytes directly to S3
-        put_url = s3.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": mime},
-            ExpiresIn=900,  # 15 minutes
-        )
+    filename = body.filename or "upload.bin"
+    mime = body.mime or "application/octet-stream"
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
 
-        return {
-            "ok": True,
-            "mode": "presigned_put",
+    photo_id = str(uuid.uuid4())
+    key = f"{album_id}/{photo_id}.{ext}"
+
+    # Create metadata now so list_photos can show it immediately
+    now = int(time.time())
+    table_photos.put_item(
+        Item={
             "photo_id": photo_id,
             "album_id": album_id,
             "s3_key": key,
-            "put_url": put_url,
-            "finalize_required": False,  # your UI checks this; keep it False
+            "uploaded_at": now,
         }
+    )
 
-    # ---- Path B: Multipart direct upload (file provided) ----
-    if file is None:
-        raise HTTPException(status_code=422, detail="file is required for multipart upload")
+    # Presigned PUT URL (browser uploads bytes directly to S3)
+    put_url = s3.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": mime},
+        ExpiresIn=900,  # 15 minutes
+    )
+
+    return {
+        "ok": True,
+        "mode": "presigned_put",
+        "photo_id": photo_id,
+        "album_id": album_id,
+        "s3_key": key,
+        "put_url": put_url,
+        "finalize_required": False,  # your UI checks this; keep it False
+    }
+
+
+# ---------- Upload: multipart (optional direct upload) ----------
+@router.post("/photos/upload", status_code=status.HTTP_201_CREATED)
+async def upload_photo_multipart(
+    album_id_snake: Optional[str] = Form(None, alias="album_id"),
+    album_id_camel: Optional[str] = Form(None, alias="albumId"),
+    file: UploadFile = File(...),
+    user_id: str = Depends(current_user),
+):
+    album_id = album_id_snake or album_id_camel
+    if not album_id:
+        raise HTTPException(status_code=422, detail="album_id is required")
+
+    _assert_album_ownership(album_id, user_id)
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected")
 
-    # Optional in-memory size check
+    # Optional size guard
     contents = await file.read()
     if len(contents) > MAX_BYTES:
         raise HTTPException(status_code=413, detail=f"File too large (>{MAX_BYTES} bytes)")
@@ -133,7 +120,7 @@ async def create_or_upload_photo(
     photo_id = str(uuid.uuid4())
     key = f"{album_id}/{photo_id}.{ext}"
 
-    # Upload to S3; set ContentType so browsers render correctly
+    # Upload to S3; set ContentType for correct rendering
     s3.upload_fileobj(
         file.file,
         S3_BUCKET,
@@ -152,7 +139,7 @@ async def create_or_upload_photo(
         }
     )
 
-    # One-hour presigned GET URL
+    # One-hour presigned GET
     url = s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": S3_BUCKET, "Key": key},
@@ -169,6 +156,7 @@ async def create_or_upload_photo(
     }
 
 
+# ---------- List ----------
 @router.get("/photos/")
 def list_photos(
     album_id: str = Query(...),
@@ -176,9 +164,7 @@ def list_photos(
     last_key: Optional[str] = Query(None),
     user_id: str = Depends(current_user),
 ):
-    alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
-    if not alb or alb.get("owner") != user_id:
-        raise HTTPException(status_code=404, detail="Album not found")
+    _assert_album_ownership(album_id, user_id)
 
     # Fetch all photos for this album via GSI
     resp = table_photos.query(
@@ -219,6 +205,7 @@ def list_photos(
     return {"items": page, "next_key": next_key}
 
 
+# ---------- Delete ----------
 @router.delete("/photos/{photo_id}", status_code=204)
 def delete_photo(photo_id: str, user_id: str = Depends(current_user)):
     item = table_photos.get_item(Key={"photo_id": photo_id}).get("Item")
