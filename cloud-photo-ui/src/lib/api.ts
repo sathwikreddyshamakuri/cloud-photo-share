@@ -6,8 +6,8 @@ export const API_BASE_URL = RAW.replace(/\/+$/, "") || "http://localhost:8000";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // send cookies if browser allows
-  headers: { "Content-Type": "application/json", Accept: "application/json" },
+  withCredentials: true,
+  headers: { Accept: "application/json" }, // don't force JSON content-type globally
 });
 
 const TOKEN_KEY = "token";
@@ -23,7 +23,6 @@ function applyAuthHeader() {
   }
 }
 
-// allow pages to set/clear token centrally
 export function setAuthToken(token?: string) {
   if (token) window.localStorage.setItem(TOKEN_KEY, token);
   else window.localStorage.removeItem(TOKEN_KEY);
@@ -34,6 +33,36 @@ export function setAuthToken(token?: string) {
 }
 
 applyAuthHeader();
+
+// Auto-choose Content-Type: JSON only for plain objects; leave FormData/Blob/File alone.
+api.interceptors.request.use((config) => {
+  const headers: any = config.headers as any;
+
+  // Respect caller-provided content-type if set
+  const hasCT =
+    (headers?.get && (headers.has("Content-Type") || headers.has("content-type"))) ||
+    (!!headers && (headers["Content-Type"] || headers["content-type"]));
+
+  if (!hasCT) {
+    const d = config.data;
+    const isFormData = typeof FormData !== "undefined" && d instanceof FormData;
+    const isBlob = typeof Blob !== "undefined" && d instanceof Blob;
+    const isFile = typeof File !== "undefined" && d instanceof File;
+    const isPlainObject =
+      d &&
+      typeof d === "object" &&
+      !isFormData &&
+      !isBlob &&
+      !isFile &&
+      !Array.isArray(d);
+
+    if (isPlainObject) {
+      if (headers?.set) headers.set("Content-Type", "application/json");
+      else (config.headers as any)["Content-Type"] = "application/json";
+    }
+  }
+  return config;
+});
 
 // auto-clear on 401 so we don’t loop
 api.interceptors.response.use(
