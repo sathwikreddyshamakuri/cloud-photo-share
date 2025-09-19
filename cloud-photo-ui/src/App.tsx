@@ -1,3 +1,4 @@
+// cloud-photo-ui/src/App.tsx
 import {
   BrowserRouter,
   Routes,
@@ -14,6 +15,7 @@ import SignupPage         from "./pages/SignupPage";
 import ForgotPasswordPage from "./pages/ForgotPassword";
 import ResetPasswordPage  from "./pages/ResetPassword";
 import VerifyEmailPage    from "./pages/VerifyEmail";
+import VerifyResultPage   from "./pages/VerifyResult";   // ⬅️ NEW
 
 import WelcomePage  from "./pages/WelcomePage";
 import Dashboard    from "./pages/Dashboard";
@@ -38,24 +40,25 @@ function Router() {
   return (
     <>
       <Routes>
-        {/* PUBLIC routes */}
+        {/* PUBLIC (redirect to /albums if already authed) */}
         <Route path="/"        element={token ? <Navigate to="/albums" replace /> : <LandingPage        />} />
         <Route path="/login"   element={token ? <Navigate to="/albums" replace /> : <LoginPage          />} />
         <Route path="/signup"  element={token ? <Navigate to="/albums" replace /> : <SignupPage         />} />
         <Route path="/forgot"  element={token ? <Navigate to="/albums" replace /> : <ForgotPasswordPage />} />
 
-        {/* ALWAYS PUBLIC (no redirect even if token exists) */}
+        {/* ALWAYS PUBLIC (email-link flows; do NOT redirect even if token exists) */}
         <Route path="/verify"          element={<VerifyEmailPage   />} />
+        <Route path="/verify-result"   element={<VerifyResultPage  />} />  {/* ⬅️ NEW */}
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
 
-        {/* PRIVATE routes */}
+        {/* PRIVATE */}
         <Route path="/welcome"    element={token ? <WelcomePage /> : <Navigate to="/login" replace />} />
         <Route path="/dashboard"  element={token ? <Dashboard   /> : <Navigate to="/login" replace />} />
         <Route path="/albums"     element={token ? <AlbumsPage  /> : <Navigate to="/login" replace />} />
         <Route path="/albums/:id" element={token ? <AlbumPage   /> : <Navigate to="/login" replace />} />
         <Route path="/profile"    element={token ? <ProfilePage /> : <Navigate to="/login" replace />} />
 
-        {/* fallback ? always land on landing page */}
+        {/* fallback → landing */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
