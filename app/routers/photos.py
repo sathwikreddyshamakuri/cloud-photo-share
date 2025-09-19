@@ -29,7 +29,7 @@ table_photos = dyna.Table("PhotoMeta")
 MAX_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))  # 25MB default
 
 
-# ---------- Models ----------
+
 class PresignIn(BaseModel):
     # JSON body style for presigned flow
     album_id: Optional[str] = None
@@ -38,14 +38,20 @@ class PresignIn(BaseModel):
     mime: Optional[str] = None
 
 
-# ---------- Helpers ----------
+
 def _assert_album_ownership(album_id: str, user_id: str):
     alb = table_albums.get_item(Key={"album_id": album_id}).get("Item")
     if not alb or alb.get("owner") != user_id:
         raise HTTPException(status_code=404, detail="Album not found")
 
 
-# ---------- Upload: JSON presign flow ----------
+def _safe_filename(name: str) -> str:
+    # very light normalization for Content-Disposition
+    name = (name or "").strip().replace("\r", "").replace("\n", "")
+    return name or "download.bin"
+
+
+
 @router.post("/photos/", status_code=status.HTTP_201_CREATED)
 def create_photo_presigned(
     body: PresignIn = Body(...),
@@ -71,6 +77,7 @@ def create_photo_presigned(
             "photo_id": photo_id,
             "album_id": album_id,
             "s3_key": key,
+            "filename": filename,   # <-- store original name
             "uploaded_at": now,
         }
     )
@@ -89,11 +96,11 @@ def create_photo_presigned(
         "album_id": album_id,
         "s3_key": key,
         "put_url": put_url,
-        "finalize_required": False,  # your UI checks this; keep it False
+        "finalize_required": False,
     }
 
 
-# ---------- Upload: multipart (optional direct upload) ----------
+
 @router.post("/photos/upload", status_code=status.HTTP_201_CREATED)
 async def upload_photo_multipart(
     album_id_snake: Optional[str] = Form(None, alias="album_id"),
@@ -125,7 +132,9 @@ async def upload_photo_multipart(
         file.file,
         S3_BUCKET,
         key,
-        ExtraArgs={"ContentType": file.content_type or "application/octet-stream"},
+        ExtraArgs={
+            "ContentType": file.content_type or "application/octet-stream",
+        },
     )
 
     # Save metadata
@@ -135,11 +144,12 @@ async def upload_photo_multipart(
             "photo_id": photo_id,
             "album_id": album_id,
             "s3_key": key,
+            "filename": file.filename,  # <-- store original name
             "uploaded_at": now,
         }
     )
 
-    # One-hour presigned GET
+    # One-hour presigned GET URL
     url = s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": S3_BUCKET, "Key": key},
@@ -156,7 +166,7 @@ async def upload_photo_multipart(
     }
 
 
-# ---------- List ----------
+
 @router.get("/photos/")
 def list_photos(
     album_id: str = Query(...),
@@ -180,7 +190,7 @@ def list_photos(
         )
         items.extend(resp.get("Items", []))
 
-    # Oldest → newest
+
     items.sort(key=lambda p: p["uploaded_at"])
 
     # Offset if last_key provided
@@ -193,11 +203,22 @@ def list_photos(
 
     page = items[start : start + limit]
 
-    # Attach URLs
     for p in page:
+        key = p["s3_key"]
+        original = _safe_filename(p.get("filename") or key.rsplit("/", 1)[-1])
+
         p["url"] = s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": S3_BUCKET, "Key": p["s3_key"]},
+            Params={"Bucket": S3_BUCKET, "Key": key},
+            ExpiresIn=3600,
+        )
+        p["download_url"] = s3.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": S3_BUCKET,
+                "Key": key,
+                "ResponseContentDisposition": f'attachment; filename="{original}"',
+            },
             ExpiresIn=3600,
         )
 
@@ -205,7 +226,6 @@ def list_photos(
     return {"items": page, "next_key": next_key}
 
 
-# ---------- Delete ----------
 @router.delete("/photos/{photo_id}", status_code=204)
 def delete_photo(photo_id: str, user_id: str = Depends(current_user)):
     item = table_photos.get_item(Key={"photo_id": photo_id}).get("Item")
@@ -220,5 +240,4 @@ def delete_photo(photo_id: str, user_id: str = Depends(current_user)):
     try:
         s3.delete_object(Bucket=S3_BUCKET, Key=item["s3_key"])
     except Exception:
-        # soft-fail S3 delete; metadata already removed
         pass
