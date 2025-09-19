@@ -12,28 +12,23 @@ import time
 import uuid
 import boto3
 
-# Pillow (optional): extract EXIF if installed, otherwise skip
+# Pillow optional
 try:
     from PIL import Image, ExifTags  # type: ignore
     HAS_PIL = True
-except Exception:  # Pillow not installed
+except Exception:
     Image = None       # type: ignore[assignment]
     ExifTags = None    # type: ignore[assignment]
     HAS_PIL = False
 
-from ..auth import decode_token
+from ..auth import current_user                     
 from ..aws_config import REGION, S3_BUCKET, dyna
 from .albums import table_albums  # reuse Albums table
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
-UPLOAD_DIR = Path("uploads")   # temp folder for EXIF
+UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
-
-def current_user(token: str = Depends(decode_token)) -> str:
-    # decode_token should return the user_id; if it returns a jwt payload,
-    # adapt this to extract the subject/user id.
-    return token
 
 def _s3():
     return boto3.client("s3", region_name=REGION)
@@ -67,20 +62,16 @@ def extract_exif(fp: Path):
     except Exception:
         return 0, 0, ""
 
-# -------------------- Models --------------------
-
 class PresignIn(BaseModel):
     album_id: Optional[str] = None
     albumId: Optional[str] = None
     filename: str
     mime: Optional[str] = None
 
-# -------------------- Upload (A): JSON → presigned PUT --------------------
-
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_photo_presigned(
     body: PresignIn = Body(...),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(current_user),             
 ):
     album_id = body.album_id or body.albumId
     if not album_id:
@@ -92,10 +83,8 @@ def create_photo_presigned(
     mime = body.mime or "application/octet-stream"
 
     photo_id = str(uuid.uuid4())
-    # Keep your existing key layout
     key = f"photos/{album_id}/{photo_id}-{filename}"
 
-    # Create metadata now so list can show the item immediately
     now = int(time.time())
     table_photos.put_item(Item={
         "photo_id":    photo_id,
@@ -109,7 +98,6 @@ def create_photo_presigned(
         "uploaded_at": now,
     })
 
-    # Presigned PUT for browser upload
     s3 = _s3()
     put_url = s3.generate_presigned_url(
         "put_object",
@@ -127,27 +115,23 @@ def create_photo_presigned(
         "finalize_required": False,
     }
 
-# -------------------- Upload (B): multipart direct (optional) --------------------
-
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_photo_multipart(
     album_id: str = Form(...),
     file: UploadFile = File(...),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(current_user),             # ✅
 ):
     _assert_album_ownership(album_id, user_id)
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(400, "file must be an image")
 
-    # temp file for EXIF
     temp_path = UPLOAD_DIR / f"tmp-{uuid.uuid4()}"
     with temp_path.open("wb") as tmp:
         tmp.write(await file.read())
 
     width, height, taken_at = extract_exif(temp_path)
 
-    # Upload to S3
     photo_id = str(uuid.uuid4())
     filename = _safe_filename(file.filename or "upload.bin")
     key = f"photos/{album_id}/{photo_id}-{filename}"
@@ -158,7 +142,6 @@ async def upload_photo_multipart(
     )
     temp_path.unlink(missing_ok=True)
 
-    # store metadata
     table_photos.put_item(Item={
         "photo_id":    photo_id,
         "album_id":    album_id,
@@ -178,14 +161,12 @@ async def upload_photo_multipart(
     )
     return {"ok": True, "mode": "multipart", "photo_id": photo_id, "url": url}
 
-# -------------------- List with download_url --------------------
-
 @router.get("/")
 def list_photos(
     album_id: str = Query(...),
     limit: int = Query(50, gt=1),
     last_key: Optional[str] = Query(None),
-    user_id: str = Depends(current_user),
+    user_id: str = Depends(current_user),             # ✅
 ):
     _assert_album_ownership(album_id, user_id)
 
@@ -202,10 +183,8 @@ def list_photos(
         )
         items.extend(resp.get("Items", []))
 
-    # sort by uploaded_at ascending
     items.sort(key=lambda p: p.get("uploaded_at", 0))
 
-    # page window
     start = 0
     if last_key:
         for i, p in enumerate(items):
@@ -214,7 +193,6 @@ def list_photos(
                 break
     page = items[start : start + limit]
 
-    # attach URLs
     s3 = _s3()
     for p in page:
         key = p["s3_key"]
@@ -236,8 +214,6 @@ def list_photos(
 
     next_key = page[-1]["photo_id"] if page and (start + limit) < len(items) else None
     return {"items": page, "next_key": next_key}
-
-# -------------------- Delete (support trailing slash in UI) --------------------
 
 @router.delete("/{photo_id}/", status_code=204)
 def delete_photo_trailing(photo_id: str, user_id: str = Depends(current_user)):
