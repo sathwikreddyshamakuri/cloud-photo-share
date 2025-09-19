@@ -13,7 +13,9 @@ interface PhotoMeta {
   album_id: string;
   s3_key: string;
   uploaded_at: number;
-  url: string;
+  url: string;              // inline view URL
+  filename?: string;        // original filename (optional)
+  download_url?: string;    // server-provided attachment URL (optional)
 }
 
 /* focus helper so the light-box receives Arrow-key events */
@@ -142,13 +144,52 @@ export default function AlbumPage() {
   }
 
   /*  download  */
-  function downloadSelected() {
-    selected.forEach(id=>{
-      const p = photos.find(ph=>ph.photo_id===id); if (!p) return;
-      const link = document.createElement('a');
-      link.href = p.url; link.download = `photo-${id}.jpg`;
-      document.body.appendChild(link); link.click(); link.remove();
-    });
+  async function downloadSelected() {
+    if (!selected.size) return;
+
+    // Blob fallback (works even if browser ignores <a download> on cross-origin)
+    async function saveViaBlob(href: string, suggestedName: string) {
+      const res = await fetch(href);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    }
+
+    for (const id of selected) {
+      const p = photos.find(ph => ph.photo_id === id);
+      if (!p) continue;
+
+      const filename =
+        p.filename ||
+        p.s3_key.split('/').pop() ||
+        `photo-${id}.jpg`;
+
+      // Prefer server-provided download_url (Content-Disposition: attachment)
+      const href = p.download_url || p.url;
+
+      try {
+        // Try native <a download> first (fast path)
+        const a = document.createElement('a');
+        a.href = href;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        // If a browser still opens a tab, uncomment the next line to force Blob:
+        // await saveViaBlob(href, filename);
+      } catch {
+        // Fallback to Blob save
+        await saveViaBlob(href, filename);
+      }
+    }
+
     toast.success('Downloading…');
   }
 
