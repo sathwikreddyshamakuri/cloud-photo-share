@@ -1,0 +1,36 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "UsersTableRW",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:Scan"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Users"
+    },
+    {
+      "Sid": "UsersEmailIndexQuery",
+      "Effect": "Allow",
+      "Action": [ "dynamodb:Query" ],
+      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Users/index/email-index"
+    },
+    {
+      "Sid": "TokensTableRW",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Tokens"
+    }
+  ]
+}
