@@ -8,10 +8,18 @@ from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel
 from boto3.dynamodb.conditions import Key
-from PIL import Image, ExifTags
 import time
 import uuid
 import boto3
+
+# Pillow (optional): extract EXIF if installed, otherwise skip
+try:
+    from PIL import Image, ExifTags  # type: ignore
+    HAS_PIL = True
+except Exception:  # Pillow not installed
+    Image = None       # type: ignore[assignment]
+    ExifTags = None    # type: ignore[assignment]
+    HAS_PIL = False
 
 from ..auth import decode_token
 from ..aws_config import REGION, S3_BUCKET, dyna
@@ -19,7 +27,7 @@ from .albums import table_albums  # reuse Albums table
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 table_photos = dyna.Table("PhotoMeta")
-UPLOAD_DIR = Path("uploads")   # temp folder for PIL
+UPLOAD_DIR = Path("uploads")   # temp folder for EXIF
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 def current_user(token: str = Depends(decode_token)) -> str:
@@ -41,11 +49,13 @@ def _safe_filename(name: str) -> str:
     return name or "download.bin"
 
 def extract_exif(fp: Path):
+    if not HAS_PIL:
+        return 0, 0, ""
     try:
-        img = Image.open(fp)
-        width, height = img.size
-        exif = img._getexif() or {}
-        tag_map = {ExifTags.TAGS.get(k): v for k, v in exif.items()}
+        img = Image.open(fp)  # type: ignore[union-attr]
+        width, height = img.size  # type: ignore[assignment]
+        exif = img._getexif() or {}  # type: ignore[attr-defined]
+        tag_map = {ExifTags.TAGS.get(k): v for k, v in exif.items()}  # type: ignore[union-attr]
         taken_raw = tag_map.get("DateTimeOriginal")
         taken_at = (
             datetime.strptime(taken_raw, "%Y:%m:%d %H:%M:%S")
@@ -57,7 +67,7 @@ def extract_exif(fp: Path):
     except Exception:
         return 0, 0, ""
 
-
+# -------------------- Models --------------------
 
 class PresignIn(BaseModel):
     album_id: Optional[str] = None
@@ -65,7 +75,7 @@ class PresignIn(BaseModel):
     filename: str
     mime: Optional[str] = None
 
-
+# -------------------- Upload (A): JSON → presigned PUT --------------------
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_photo_presigned(
@@ -80,7 +90,6 @@ def create_photo_presigned(
 
     filename = _safe_filename(body.filename or "upload.bin")
     mime = body.mime or "application/octet-stream"
-    ext = filename.rsplit(".", 1)[-1] if "." in filename else "bin"
 
     photo_id = str(uuid.uuid4())
     # Keep your existing key layout
@@ -169,7 +178,7 @@ async def upload_photo_multipart(
     )
     return {"ok": True, "mode": "multipart", "photo_id": photo_id, "url": url}
 
-
+# -------------------- List with download_url --------------------
 
 @router.get("/")
 def list_photos(
@@ -228,7 +237,7 @@ def list_photos(
     next_key = page[-1]["photo_id"] if page and (start + limit) < len(items) else None
     return {"items": page, "next_key": next_key}
 
-
+# -------------------- Delete (support trailing slash in UI) --------------------
 
 @router.delete("/{photo_id}/", status_code=204)
 def delete_photo_trailing(photo_id: str, user_id: str = Depends(current_user)):
