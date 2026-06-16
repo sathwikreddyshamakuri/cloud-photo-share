@@ -7,6 +7,7 @@ NuageVault is a simple, privacy-minded photo app. Create albums, upload photos, 
 ## Features
 - Landing page at `/` with **Log in** / **Sign up**
 - JWT auth (register, login, logout → returns to `/`)
+- Email verification via Resend (configurable)
 - Albums: create, rename, delete
 - Photos: upload, fullscreen viewer, multi-select download/delete
 - Dashboard: albums/photos/storage stats
