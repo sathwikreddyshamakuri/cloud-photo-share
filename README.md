@@ -26,7 +26,7 @@ cloud-photo-share/
 
 ## Quick Start (Local)
 
-### 1) Backend (FastAPI)
+### 1. Backend (FastAPI)
 ```bash
 cd app
 python -m venv .venv
@@ -53,7 +53,7 @@ RESEND_API_KEY=your-resend-api-key-here
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 2) Frontend (Vite)
+### 2. Frontend (Vite)
 ```bash
 cd cloud-photo-ui
 npm install
@@ -99,8 +99,10 @@ Resend (email verification & password reset)
 
 ## 🔐 Security & Privacy
 
-- JWT tokens are used for authentication (stored in localStorage)
-- S3 object URLs should be pre-signed for stricter privacy — the current code assumes safe distribution. Switch to S3 pre-signed URLs or CloudFront signed cookies for production.
+- JWT tokens are issued as HttpOnly cookies on login (inaccessible to JavaScript). 
+  The frontend also sends an Authorization header for compatibility. 
+  HttpOnly cookies are the primary security mechanism.
+- All S3 photo URLs are pre-signed with a 1-hour expiry, ensuring only authenticated users can access photos. URLs cannot be shared or accessed without a valid signed request.
 - RESEND sandbox requires verified emails. Set `AUTO_VERIFY_USERS=1` during development to skip email verification (not recommended for production).
 
 ## 🛠 Troubleshooting
