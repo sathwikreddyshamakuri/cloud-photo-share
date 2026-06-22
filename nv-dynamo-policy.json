@@ -12,13 +12,13 @@
         "dynamodb:DescribeTable",
         "dynamodb:Scan"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Users"
+      "Resource": "arn:aws:dynamodb:us-east-1:ACCOUNT_ID:table/Users"
     },
     {
       "Sid": "UsersEmailIndexQuery",
       "Effect": "Allow",
       "Action": [ "dynamodb:Query" ],
-      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Users/index/email-index"
+      "Resource": "arn:aws:dynamodb:us-east-1:ACCOUNT_ID:table/Users/index/email-index"
     },
     {
       "Sid": "TokensTableRW",
@@ -30,7 +30,7 @@
         "dynamodb:DeleteItem",
         "dynamodb:DescribeTable"
       ],
-      "Resource": "arn:aws:dynamodb:us-east-1:481665109433:table/Tokens"
+      "Resource": "arn:aws:dynamodb:us-east-1:ACCOUNT_ID:table/Tokens"
     }
   ]
 }
